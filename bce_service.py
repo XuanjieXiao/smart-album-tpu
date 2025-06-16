@@ -4,16 +4,7 @@ from sentence_transformers import SentenceTransformer
 import logging
 import os
 
-# --- 配置 ---
-# 尝试加载一个预训练的中文模型。您可以替换为更适合的BCE模型。
-# 'shibing624/text2vec-base-chinese' 输出 768 维
-# 'uer/sbert-base-chinese-nli' 输出 768 维
-# 'nghuyong/ernie-3.0-base-zh' (需要 PaddlePaddle)
-# 为了演示，我们使用一个常见的 sentence-transformers 模型
-# maidalun1020/bce-embedding-base_v1 这个模型是输出512维度，算能适配了
-# 如果您有特定的BCE模型（例如 .tflite 格式），加载方式会有所不同
 MODEL_NAME = 'shibing624/text2vec-base-chinese' 
-# MODEL_NAME = 'uer/sbert-base-chinese-nli'
 # 目标输出维度，根据您的方案是768。如果模型原生维度不同，需要处理。
 TARGET_DIM = 768 
 
