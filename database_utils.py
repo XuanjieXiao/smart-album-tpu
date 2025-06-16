@@ -28,15 +28,8 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("PRAGMA table_info(images)")
-    columns = [column['name'] for column in cursor.fetchall()]
-    if 'user_tags' not in columns:
-        cursor.execute("ALTER TABLE images ADD COLUMN user_tags TEXT")
-        logging.info("Added 'user_tags' column to 'images' table.")
-    if 'deleted' not in columns: 
-        cursor.execute("ALTER TABLE images ADD COLUMN deleted BOOLEAN DEFAULT FALSE")
-        logging.info("Added 'deleted' column to 'images' table.")
 
+    # ✅ 1. 先创建 images 表（如果不存在）
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS images (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,13 +47,26 @@ def init_db():
             deleted BOOLEAN DEFAULT FALSE 
         )
     ''')
+
+    # ✅ 2. 创建索引（在表存在之后才有效）
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_faiss_id ON images (faiss_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_original_path ON images (original_path)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_deleted ON images (deleted)")
 
+    # ✅ 3. 再尝试添加字段，防止旧表缺字段
+    cursor.execute("PRAGMA table_info(images)")
+    columns = [column['name'] for column in cursor.fetchall()]
+    if 'user_tags' not in columns:
+        cursor.execute("ALTER TABLE images ADD COLUMN user_tags TEXT")
+        logging.info("Added 'user_tags' column to 'images' table.")
+    if 'deleted' not in columns: 
+        cursor.execute("ALTER TABLE images ADD COLUMN deleted BOOLEAN DEFAULT FALSE")
+        logging.info("Added 'deleted' column to 'images' table.")
+
     conn.commit()
     conn.close()
     logging.info("数据库初始化/检查完毕。")
+
 
 def add_image_to_db(original_filename: str, original_path: str, thumbnail_path: str | None, clip_embedding: np.ndarray):
     conn = get_db_connection()

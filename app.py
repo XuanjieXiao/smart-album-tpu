@@ -27,7 +27,7 @@ except ImportError as e:
     logging.error(f"导入 依赖包失败: {e}. 请确保 {e}已经安装好。")
     sys.exit(1)
 
-import bce_service
+import bce_embedding
 import qwen_service
 import database_utils as db
 import faiss_utils as fu
@@ -92,6 +92,16 @@ def save_app_config():
     except Exception as e:
         logging.error(f"保存配置到 {APP_CONFIG_FILE} 失败: {e}")
 
+
+def load_bce_model_on_startup(args):
+    global bce_service
+    try:
+        logging.info(f"正在加载 BCE 模型: {args.bce_model} (设备: {args.dev_id})")
+        bce_service = bce_embedding.load(args.bce_model, args.dev_id)
+        logging.info("BCE 模型加载成功。")
+    except Exception as e:
+        logging.error(f"加载 BCE 模型失败: {e}", exc_info=True)
+        bce_service = None
 
 def load_clip_model_on_startup(args):
     global clip_model, clip_preprocess
@@ -807,6 +817,7 @@ def argsparser():
     parser = argparse.ArgumentParser(prog=__file__)
     parser.add_argument('--image_model', type=str, default='./models/BM1684X/cn_clip_image_vit_h_14_bm1684x_f16_1b.bmodel', help='path of image bmodel')
     parser.add_argument('--text_model', type=str, default='./models/BM1684X/cn_clip_text_vit_h_14_bm1684x_f16_1b.bmodel', help='path of text bmodel')
+    parser.add_argument('--bce_model', type=str, default='./models/BM1684X/text2vec_base_chinese_bm1684x_f16_1b.bmodel', help='path of bce bmodel')
     parser.add_argument('--dev_id', type=int, default=4, help='dev id')
     args = parser.parse_args()
     return args
@@ -820,8 +831,9 @@ if __name__ == '__main__':
     db.init_db() 
     fu.init_faiss_index() 
     load_clip_model_on_startup(args)
+    load_bce_model_on_startup(args)
     
-    if not bce_service.bce_model: 
+    if not bce_service: 
         logging.warning("BCE模型在bce_service中未能加载。请检查日志。")
     if not clip_model:
         logging.warning("CLIP模型未能加载,请检查日志。")
