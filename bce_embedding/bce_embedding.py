@@ -16,7 +16,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 # 加载 tokenizer
-tokenizer_path = '/data/xuanjiexiao/xuanjiexiao/smart-album-tpu/models/shibing624/text2vec-base-chinese'
+tokenizer_path = './models/shibing624/text2vec-base-chinese'
 
 class BCEEmbedding:
     def __init__(self, bce_model, dev_id):
