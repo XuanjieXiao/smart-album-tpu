@@ -818,7 +818,7 @@ def argsparser():
     parser.add_argument('--image_model', type=str, default='./models/BM1684X/cn_clip_image_vit_h_14_bm1684x_f16_1b.bmodel', help='path of image bmodel')
     parser.add_argument('--text_model', type=str, default='./models/BM1684X/cn_clip_text_vit_h_14_bm1684x_f16_1b.bmodel', help='path of text bmodel')
     parser.add_argument('--bce_model', type=str, default='./models/BM1684X/text2vec_base_chinese_bm1684x_f16_1b.bmodel', help='path of bce bmodel')
-    parser.add_argument('--dev_id', type=int, default=4, help='dev id')
+    parser.add_argument('--dev_id', type=int, default=0, help='dev id')
     args = parser.parse_args()
     return args
 

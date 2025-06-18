@@ -74,19 +74,61 @@ smart-album-tpu/
 
 ### 1. 硬件与软件环境
 * **硬件**: 本项目专为 **Sophgo TPU** (如 BM1684X 系列) 设计，其性能依赖于 TPU 的硬件加速能力。
-* **Python**: 建议使用 Python 3.9 或更高版本。
+* **Python**: 建议使用 Python 3.10 或更高版本。
 * **Sophon SDK**: 请确保您已在您的硬件平台上正确安装了 Sophgo SDK，并配置好了 `sophon.sail` Python 库的运行环境。
 
 ### 2. 安装依赖
 克隆项目后，建议在 Python 虚拟环境中安装所有必需的依赖包。
+首先安装python3.10
 ```bash
-# 创建并激活虚拟环境
-python3 -m venv venv
-source venv/bin/activate  # Linux/macOS
-# venv\Scripts\activate    # Windows
+# 创建并安装python3.10的环境
+✅ 步骤 1：安装依赖并添加 Python PPA
+sudo apt update
+sudo apt install -y software-properties-common
+sudo add-apt-repository -y ppa:deadsnakes/ppa
+sudo apt update
+✅ 步骤 2：安装 Python 3.10
 
+sudo apt install -y python3.10 python3.10-venv python3.10-dev python3.10-distutils
+✅ 步骤 3：设置 Python 3.10 为默认 python3 和 python
+添加到 update-alternatives
+
+sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
+sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 2
+
+sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.8 1
+sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.10 2
+可选：手动切换默认版本
+
+sudo update-alternatives --config python3
+sudo update-alternatives --config python
+系统会提示选择编号，选择对应 Python 3.10 的编号即可。
+
+✅ 步骤 4：确认默认 Python 版本
+
+python --version
+python3 --version
+输出应类似于：
+
+
+Python 3.10.x
+✅ 步骤 5：安装 pip（如未自动安装）
+如报错 No module named pip，可运行：
+
+
+python3.10 -m ensurepip --upgrade
+python3.10 -m pip install --upgrade pip
+创建 pip 的软链接（可选）
+
+sudo ln -s /usr/bin/pip3 /usr/local/bin/pip
+```
+
+安装需要的依赖
+```
 # 安装依赖
 pip install -r requirements.txt
+sudo apt install -y libgl1
+python -m dfss --install sail
 ```
 
 ### 3. 模型文件准备
