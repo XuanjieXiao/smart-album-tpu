@@ -41,6 +41,9 @@ then
         unzip shibing624.zip -d ../
         rm shibing624.zip
 
+        python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/bpe_simple_vocab_16e6.txt.gz
+        mv bpe_simple_vocab_16e6.txt.gz ../clip
+
         echo "models and configs download!"
     else
         mkdir -p ../models
@@ -52,6 +55,9 @@ then
         python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip
         unzip shibing624.zip -d ../
         rm shibing624.zip
+
+        python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/bpe_simple_vocab_16e6.txt.gz
+        mv bpe_simple_vocab_16e6.txt.gz ../clip/
 
         echo "$target models and configs download!"
     fi
