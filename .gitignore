@@ -9,3 +9,5 @@
 *.index
 *.onnx
 *.extra_file
+*.pt
+*.pth

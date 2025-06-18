@@ -37,14 +37,23 @@ then
         unzip BM1688.zip -d ../
         rm BM1688.zip
 
-        echo "models download!"
+        python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip
+        unzip shibing624.zip -d ../
+        rm shibing624.zip
+
+        echo "models and configs download!"
     else
         mkdir -p ../models
 
         python3 -m dfss --url=open@sophgo.com:sophon-demo/CLIP/cn_clip/$target.zip
         unzip $target.zip -d ../models
         rm $target.zip
-        echo "$target models download!"
+
+        python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip
+        unzip shibing624.zip -d ../
+        rm shibing624.zip
+        
+        echo "$target models and configs download!"
     fi
 else
     echo "Models folder or file exist! Remove it if you need to update."
