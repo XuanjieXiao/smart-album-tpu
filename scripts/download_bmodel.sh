@@ -45,14 +45,14 @@ then
     else
         mkdir -p ../models
 
-        python3 -m dfss --url=open@sophgo.com:sophon-demo/CLIP/cn_clip/$target.zip
+        python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/$target.zip
         unzip $target.zip -d ../models
         rm $target.zip
 
         python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip
         unzip shibing624.zip -d ../
         rm shibing624.zip
-        
+
         echo "$target models and configs download!"
     fi
 else
