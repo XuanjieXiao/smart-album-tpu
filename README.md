@@ -86,7 +86,8 @@ smart-album-tpu/
 
 ### 2. 安装依赖
 克隆项目后，建议在 Python 虚拟环境中安装所有必需的依赖包。
-首先安装python3.10
+
+因项目的环境需求，需要在python3.10及以上版本运行，所以首先安装python3.10
 ```bash
 # 创建并安装python3.10的环境
 ✅ 步骤 1：安装依赖并添加 Python PPA
