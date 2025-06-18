@@ -17,3 +17,4 @@ opencv-python
 numpy
 wheel
 six
+torch
