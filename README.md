@@ -1,4 +1,4 @@
-# 智能相册 (Smart Album) - (基于 Sophgo TPU、Chinese-CLIP 与 Qwen-VL)
+# 智能相册 (Smart Album)
 
 本项目是一个功能完备、基于 Flask 的智能相册 Web 应用，专为在 **Sophgo TPU** 硬件上高效运行而设计。它允许用户上传图片，并通过两种强大的方式进行智能检索：**中文文本描述搜图**和**以图搜图**。
 

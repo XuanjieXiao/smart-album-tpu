@@ -1,4 +1,4 @@
-# 智能相册 (Smart Album) - (基于 Sophgo TPU、Chinese-CLIP 与 Qwen-VL)的接口文档
+# 智能相册 (Smart Album) 接口文档
 
 ## 📑 API 接口文档
 
