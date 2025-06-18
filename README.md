@@ -167,3 +167,5 @@ python app.py \
 服务默认会在 `http://0.0.0.0:5000` 启动。在浏览器中打开 `http://localhost:5000` 即可开始使用。
 
 ---
+前端交互界面如下：
+![alt text](./pics/image.png)
