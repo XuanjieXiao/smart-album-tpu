@@ -52,7 +52,7 @@ if [ ! -d $outdir ]; then
 fi
 
 # batch_size=1
-# embedding encode
+# embedding
 gen_embedding_encode_mlir 1
 gen_embedding_encode_fp16bmodel 1
 

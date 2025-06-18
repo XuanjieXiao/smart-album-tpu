@@ -7,3 +7,5 @@
 *.bmodel
 *.db
 *.index
+*.onnx
+*.extra_file
