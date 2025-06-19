@@ -16,3 +16,6 @@
 !./pics/*.jpg
 !./pics/*.png
 !./pics/*.jpeg
+!.static/images/*.png
+!.static/images/*.jpg
+!.static/images/*.jpeg
