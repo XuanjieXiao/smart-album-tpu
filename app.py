@@ -839,5 +839,4 @@ if __name__ == '__main__':
         logging.warning("CLIP模型未能加载,请检查日志。")
 
     logging.info("智能相册后端服务准备启动...")
-    # app.run(host="0.0.0.0", port=5000, debug=True)
     app.run(host="0.0.0.0", port=5000, debug=False)
