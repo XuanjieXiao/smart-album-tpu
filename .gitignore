@@ -12,3 +12,7 @@
 *.pt
 *.pth
 *.zip
+!./pics/
+!./pics/*.jpg
+!./pics/*.png
+!./pics/*.jpeg
