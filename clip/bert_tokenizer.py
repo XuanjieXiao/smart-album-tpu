@@ -25,11 +25,24 @@ import unicodedata
 import six
 from functools import lru_cache
 import os
+import sys
 
+
+# @lru_cache()
+# def default_vocab():
+#     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "vocab.txt")
 @lru_cache()
 def default_vocab():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "vocab.txt")
-
+    """获取 vocab.txt 的路径，兼容开发模式和 --onefile 模式"""
+    if getattr(sys, 'frozen', False):
+        # 在 --onefile 模式下，文件被解压到 sys._MEIPASS 临时目录
+        # .spec 文件将 vocab.txt 放在了临时目录的 'clip' 子文件夹下
+        base_path = sys._MEIPASS
+        return os.path.join(base_path, 'clip', 'vocab.txt')
+    else:
+        # 在开发模式下，vocab.txt 与本文件在同一个目录下
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "vocab.txt")
+    
 def validate_case_matches_checkpoint(do_lower_case, init_checkpoint):
     """Checks whether the casing config is consistent with the checkpoint name."""
 

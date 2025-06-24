@@ -19,3 +19,11 @@
 !.static/images/*.png
 !.static/images/*.jpg
 !.static/images/*.jpeg
+build
+dist
+__pycache__
+*.egg-info
+*.egg
+*.pyo
+*.pyd
+*.so

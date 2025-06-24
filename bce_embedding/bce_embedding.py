@@ -10,13 +10,10 @@ import numpy as np
 import os
 import time
 from transformers import BertTokenizer
-
+import sys
 import sophon.sail as sail
 import logging
 logging.basicConfig(level=logging.INFO)
-
-# 加载 tokenizer
-tokenizer_path = './models/shibing624/text2vec-base-chinese'
 
 class BCEEmbedding:
     def __init__(self, bce_model, dev_id):
@@ -35,6 +32,18 @@ class BCEEmbedding:
         self.embed_dim = self.bce_net_output_shape[1] # 768 for text2vec_base_chinese
 
         self.encode_text_time = 0.0
+        original_tokenizer_path = 'models/shibing624/text2vec-base-chinese' 
+        # self.tokenizer = BertTokenizer.from_pretrained(tokenizer_path)
+        if getattr(sys, 'frozen', False):
+            # 如果是打包状态，路径在 _MEIPASS 临时目录中
+            # sys._MEIPASS 是打包程序解压后的根目录
+            tokenizer_path = os.path.join(sys._MEIPASS, original_tokenizer_path)
+            logging.info(f"Packaged App: Corrected tokenizer path to: {tokenizer_path}")
+        else:
+            # 开发模式下，使用原始相对路径即可
+            tokenizer_path = original_tokenizer_path
+        
+        # --- 3. 使用修正后的路径加载 Tokenizer ---
         self.tokenizer = BertTokenizer.from_pretrained(tokenizer_path)
     
     def pad_to_512(self, arr):

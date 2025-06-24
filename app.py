@@ -12,11 +12,31 @@ from datetime import datetime
 import tempfile # Added for temporary file handling
 import argparse
 import cv2
+import sys
+
+def get_base_path():
+    """
+    获取资源的基准路径，完美兼容开发模式、--onedir模式和--onefile模式。
+    """
+    if getattr(sys, 'frozen', False):
+        # 如果是PyInstaller打包后的可执行文件
+        # sys.executable 指向可执行文件本身
+        # 对于 --onedir, 我们要的是可执行文件所在的目录
+        # 对于 --onefile, 我们要把模型放在可执行文件旁边，所以还是用它所在的目录
+        return os.path.dirname(sys.executable)
+    else:
+        # 如果是正常的.py脚本运行
+        return os.path.dirname(os.path.abspath(__file__))
+
+    
+BASE_DIR = get_base_path()
+logging.info(f"Application base path determined as: {BASE_DIR}")
 
 logging.info("welcome using sophgo smart album!")
 
 # --- 项目路径配置 ---
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+CURRENT_DIR = BASE_DIR
 
 # --- 服务导入 ---
 try:
@@ -827,6 +847,28 @@ def argsparser():
 # --- 应用启动 ---
 if __name__ == '__main__':
     args = argsparser()
+    if getattr(sys, 'frozen', False):
+        # 如果是打包后的程序，所有命令行指定的相对路径都需要
+        # 转换为 _MEIPASS 临时目录下的绝对路径
+        base_path = sys._MEIPASS
+        
+        # 修正 image_model 路径
+        # os.path.normpath an d os.path.basename are used to handle './' prefix
+        model_rel_path = os.path.normpath(args.image_model)
+        args.image_model = os.path.join(base_path, model_rel_path)
+
+        # 修正 text_model 路径
+        model_rel_path = os.path.normpath(args.text_model)
+        args.text_model = os.path.join(base_path, model_rel_path)
+        
+        # 修正 bce_model 路径
+        model_rel_path = os.path.normpath(args.bce_model)
+        args.bce_model = os.path.join(base_path, model_rel_path)
+
+        logging.info(f"Packaged App: Corrected image_model path to {args.image_model}")
+        logging.info(f"Packaged App: Corrected text_model path to {args.text_model}")
+        logging.info(f"Packaged App: Corrected bce_model path to {args.bce_model}")
+    
     load_app_config()
     db.init_db() 
     fu.init_faiss_index() 

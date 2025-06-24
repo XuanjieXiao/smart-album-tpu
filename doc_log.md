@@ -1,4 +1,18 @@
-#!/bin/bash
+docker run --privileged --name smartalbum -v /dev:/dev -v /opt:/opt -v $PWD:/workspace -p 18088:18088 -it ubuntu:20.04
+docker run \
+    --privileged \
+    -d \
+    -p 18088:18088 \
+    --name smart-album-container \
+    -v /dev:/dev \
+    -v /opt:/opt \
+    -v $(pwd)/uploads:/workspace/smart_album/uploads \
+    -v $(pwd)/thumbnails:/workspace/smart_album/thumbnails \
+    -v $(pwd)/data:/workspace/smart_album/data \
+    smart-album:latest
+
+
+
 export DEBIAN_FRONTEND=noninteractive
 ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 apt update
@@ -19,14 +33,12 @@ ln -sf /usr/bin/pip3.10 /usr/bin/pip
 ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3.10
 update-alternatives --install /usr/bin/pip pip /usr/bin/pip3.10 1
 update-alternatives --set pip /usr/bin/pip3.10
+
 cd /workspace/smart-album-tpu/
 pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-pip install pyinstaller -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-python3 -m dfss --url=open@sophgo.com:sophon-demo/Qwen/qwq/sophon-libsophon_0.5.2_amd64.deb
-python3 -m dfss --url=open@sophgo.com:sophon-demo/Qwen/qwq/sophon-libsophon-dev_0.5.2_amd64.deb
-dpkg -i sophon-libsophon_0.5.2_amd64.deb sophon-libsophon-dev_0.5.2_amd64.deb
-rm -f sophon-libsophon_0.5.2_amd64.deb sophon-libsophon-dev_0.5.2_amd64.deb
+
+
 python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/sophon-sail.zip
 unzip sophon-sail.zip
 rm sophon-sail.zip
@@ -38,5 +50,4 @@ cd ../python
 chmod +x sophon_whl.sh
 ./sophon_whl.sh
 pip3 install ./dist/sophon-3.10.3-py3-none-any.whl --force-reinstall
-cd ../../
-rm -rf sophon-sail
+
