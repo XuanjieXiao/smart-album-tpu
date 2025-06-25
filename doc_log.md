@@ -10,8 +10,24 @@ docker run \
     -v $(pwd)/thumbnails:/workspace/smart_album/thumbnails \
     -v $(pwd)/data:/workspace/smart_album/data \
     smart-album:latest
+docker run --privileged -d -p 18088:18088 --name smart-album-container -v /dev:/dev -v /opt:/opt -v $(pwd)/uploads:/workspace/smart_album/uploads -v $(pwd)/thumbnails:/workspace/smart_album/thumbnails -v $(pwd)/data:/workspace/smart_album/data my-smart-album:latest
 
 
+
+docker build -f packaging_file/Dockerfile -t my-smart-album:latest . > build.log 2>&1
+
+docker run \
+    --privileged \
+    -d \
+    -it \
+    -v /dev:/dev \
+    -v /opt:/opt \
+    -v "$(pwd)/data:/app/data" \
+    -v "$(pwd)/uploads:/app/uploads" \
+    -v "$(pwd)/thumbnails:/app/thumbnails" \
+    -p 18080:18088 \
+    --name smart-album-container \
+    my-smart-album:latest
 
 export DEBIAN_FRONTEND=noninteractive
 ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
