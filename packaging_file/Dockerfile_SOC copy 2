@@ -1,0 +1,77 @@
+FROM ubuntu:20.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+
+WORKDIR /workspace/smart-album-tpu
+
+# --- 使用清华源加速 APT ---
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
+    software-properties-common \
+    gnupg2 \
+    tzdata \
+    wget curl
+
+# --- 添加 deadsnakes PPA，官方方式安装 Python 3.10 ---
+RUN add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y python3.10 python3.10-venv python3.10-dev python3.10-distutils
+
+# --- 设置默认 Python3 与 pip ---
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
+    ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
+    python -m ensurepip && \
+    python -m pip install --upgrade pip 
+
+RUN ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3.10 && \
+    ln -sf /usr/bin/pip3.10 /usr/bin/pip && \
+    update-alternatives --install /usr/bin/pip pip /usr/bin/pip3.10 1 && \
+    update-alternatives --set pip /usr/bin/pip3.10
+
+# --- 安装系统依赖 ---
+RUN apt-get install -y --no-install-recommends \
+    file locales dkms libncurses5 build-essential gcc g++ unzip cmake libgl1 ca-certificates
+
+# --- 拷贝项目文件 ---
+COPY . .
+
+# --- 安装 Python 依赖（dfss 会自动从 requirements.txt 安装）---
+RUN pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu && \
+    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# --- 打包 ---
+RUN pyinstaller smart_album.spec
+
+# === 第二阶段略 ===（你之前写的 runtime 阶段即可）
+
+
+# =========================================================================
+# 第二阶段：最终镜像（runtime）
+# =========================================================================
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+
+# --- 使用清华源加速 APT ---
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends libgl1 tzdata ca-certificates && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# --- 设置工作目录 ---
+WORKDIR /app
+
+# --- 拷贝打包好的可执行文件 ---
+COPY --from=builder /workspace/smart-album-tpu/dist/smart_album .
+
+# --- 设置容器入口点 ---
+ENTRYPOINT ["./smart_album"]
+CMD [ \
+    "--image_model", "./models/BM1684X/cn_clip_image_vit_h_14_bm1684x_f16_1b.bmodel", \
+    "--text_model", "./models/BM1684X/cn_clip_text_vit_h_14_bm1684x_f16_1b.bmodel", \
+    "--bce_model", "./models/BM1684X/text2vec_base_chinese_bm1684x_f16_1b.bmodel", \
+    "--dev_id", "0" \
+]

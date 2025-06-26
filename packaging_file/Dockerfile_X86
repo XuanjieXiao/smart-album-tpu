@@ -53,12 +53,29 @@ RUN apt-get install -y --no-install-recommends \
 COPY . .
 
 # --- 8. 安装 Python 依赖包 ---
-RUN pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu && \
-    pip install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && \
+RUN pip install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && \
     pip install pyinstaller -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 
+# --- 9. 下载和安装 Sophon SDK ---
+RUN python3 -m dfss --url=open@sophgo.com:sophon-demo/Qwen/qwq/sophon-libsophon_0.5.2_amd64.deb && \
+    python3 -m dfss --url=open@sophgo.com:sophon-demo/Qwen/qwq/sophon-libsophon-dev_0.5.2_amd64.deb && \
+    dpkg -i sophon-libsophon_0.5.2_amd64.deb sophon-libsophon-dev_0.5.2_amd64.deb && \
+    rm -f sophon-libsophon-dev_0.5.2_amd64.deb
+
 # --- 10. 编译和安装 Sophon-SAIL ---
-RUN python3 -m dfss --install sail
+RUN python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/sophon-sail.zip && \
+    unzip sophon-sail.zip && \
+    rm sophon-sail.zip && \
+    cd sophon-sail && \
+    mkdir build && cd build && \
+    cmake -DONLY_RUNTIME=ON .. && \
+    make pysail -j$(nproc) && \
+    cd ../python && \
+    chmod +x sophon_whl.sh && \
+    ./sophon_whl.sh && \
+    pip3 install ./dist/sophon-*.whl --force-reinstall && \
+    cd /workspace/smart-album-tpu/ && \
+    rm -rf sophon-sail
 
 # --- 11. 使用 PyInstaller 进行打包 ---
 RUN pyinstaller smart_album.spec
@@ -80,7 +97,8 @@ RUN apt-get update && \
 
 # --- 2. 从 builder 阶段拷贝并安装 Sophon 运行时库 ---
 COPY --from=builder /workspace/smart-album-tpu/sophon-libsophon_0.5.2_amd64.deb .
-
+RUN dpkg -i sophon-libsophon_0.5.2_amd64.deb && \
+    rm sophon-libsophon_0.5.2_amd64.deb
 
 # --- 3. 设置工作目录 ---
 WORKDIR /app
@@ -94,5 +112,5 @@ CMD [ \
     "--image_model", "./models/BM1684X/cn_clip_image_vit_h_14_bm1684x_f16_1b.bmodel", \
     "--text_model", "./models/BM1684X/cn_clip_text_vit_h_14_bm1684x_f16_1b.bmodel", \
     "--bce_model", "./models/BM1684X/text2vec_base_chinese_bm1684x_f16_1b.bmodel", \
-    "--dev_id", "0" \
+    "--dev_id", "5" \
 ]

@@ -48,8 +48,6 @@ class CLIP:
         # 获取当前脚本所在的目录
         script_dir = os.path.dirname(script_path)
         
-        # self.logit_scale = torch.tensor(4.605170249938965)
-
         # init preprocess
         self.mean = [0.48145466, 0.4578275, 0.40821073]
         self.std = [0.26862954, 0.26130258, 0.27577711]

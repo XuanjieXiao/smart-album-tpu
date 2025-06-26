@@ -18,3 +18,6 @@ numpy
 wheel
 six
 dfss
+tensorboard
+expecttest
+onnxscript

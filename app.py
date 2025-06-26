@@ -41,7 +41,6 @@ CURRENT_DIR = BASE_DIR
 # --- 服务导入 ---
 try:
     import clip
-    import torch
     logging.info("Chinese_CLIP 包导入成功。")
 except ImportError as e:
     logging.error(f"导入 依赖包失败: {e}. 请确保 {e}已经安装好。")
@@ -61,8 +60,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- 全局配置和常量 ---
 CLIP_MODEL_NAME = "ViT-H-14" 
 CLIP_MODEL_DOWNLOAD_ROOT = os.path.join(CURRENT_DIR, "models")
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-logging.info(f"PLEASE NOTE USING {DEVICE} NOW!")
 
 UPLOADS_DIR = os.path.join(CURRENT_DIR, "uploads")
 THUMBNAILS_DIR = os.path.join(CURRENT_DIR, "thumbnails")

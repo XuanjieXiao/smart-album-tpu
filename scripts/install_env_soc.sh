@@ -22,20 +22,5 @@ update-alternatives --set pip /usr/bin/pip3.10
 cd /workspace/smart-album-tpu/
 pip install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 pip install pyinstaller -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-python3 -m dfss --url=open@sophgo.com:sophon-demo/Qwen/qwq/sophon-libsophon_0.5.2_amd64.deb
-python3 -m dfss --url=open@sophgo.com:sophon-demo/Qwen/qwq/sophon-libsophon-dev_0.5.2_amd64.deb
-dpkg -i sophon-libsophon_0.5.2_amd64.deb sophon-libsophon-dev_0.5.2_amd64.deb
-rm -f sophon-libsophon_0.5.2_amd64.deb sophon-libsophon-dev_0.5.2_amd64.deb
-python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/sophon-sail.zip
-unzip sophon-sail.zip
-rm sophon-sail.zip
-cd sophon-sail
-mkdir build && cd build
-cmake -DONLY_RUNTIME=ON ..
-make pysail -j 64
-cd ../python
-chmod +x sophon_whl.sh
-./sophon_whl.sh
-pip3 install ./dist/sophon-3.10.3-py3-none-any.whl --force-reinstall
-cd ../../
-rm -rf sophon-sail
+python3 -m dfss --install sail
+pip install numpy==1.25.0 -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
