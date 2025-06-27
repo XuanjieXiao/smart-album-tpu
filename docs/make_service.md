@@ -61,6 +61,11 @@ docker run \
     --name smart-album-container \
     my-smart-album:latest
 ```
+
+
+
+
+
 docker run \
     --privileged \
     -d \

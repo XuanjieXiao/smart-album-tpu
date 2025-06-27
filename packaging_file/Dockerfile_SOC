@@ -86,7 +86,7 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         else \
             echo "models/BM1684X already exists, skipping download."; \
         fi; \
-        if [! -d "models/shibing624" ]; then \
+        if [ ! -d "models/shibing624" ]; then \
             python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip && \
             unzip shibing624.zip -d ./models && \
             rm shibing624.zip; \
@@ -104,7 +104,7 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         else \
             echo "models/BM1688 already exists, skipping download."; \
         fi; \
-        if [! -d "models/shibing624" ]; then \
+        if [ ! -d "models/shibing624" ]; then \
             python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip && \
             unzip shibing624.zip -d ./models && \
             rm shibing624.zip; \
@@ -155,7 +155,7 @@ WORKDIR /app
 COPY --from=builder /workspace/smart-album-tpu/dist/smart_album .
 
 # --- 5. 设置容器启动命令 ---
-ENTRYPOINT ["./smart_album/smart_album"]
+ENTRYPOINT ["./smart_album"]
 CMD [ \
     "--image_model", "./models/BM1684X/cn_clip_image_vit_h_14_bm1684x_f16_1b.bmodel", \
     "--text_model", "./models/BM1684X/cn_clip_text_vit_h_14_bm1684x_f16_1b.bmodel", \
