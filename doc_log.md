@@ -1,4 +1,8 @@
 docker run --privileged --name smartalbum -v /dev:/dev -v /opt:/opt -v $PWD:/workspace -p 18088:18088 -it ubuntu:20.04
+
+docker run --privileged --name smartalbum -v /dev:/dev -v /opt:/opt -v $PWD:/workspace -p 18088:18088 -it ubuntu:20.04
+
+
 docker run \
     --privileged \
     -d \
@@ -67,3 +71,23 @@ chmod +x sophon_whl.sh
 ./sophon_whl.sh
 pip3 install ./dist/sophon-3.10.3-py3-none-any.whl --force-reinstall
 
+
+
+export PYTHONPATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/opencv-python:$PYTHONPATH"
+export LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:/opt/sophon/sophon-soc-libisp_1.0.0/lib:$LD_LIBRARY_PATH"
+
+
+
+pyinstaller --onedir \
+    --name 'smart_album' \
+    --add-data 'models/BM1684X:models/BM1684X' \
+    --add-data 'models/shibing624:models/shibing624' \
+    --add-data 'static:static' \
+    --add-data 'templates:templates' \
+    --add-data 'data/app_config.json:data' \
+    --add-data 'clip/vocab.txt:clip' \
+    --add-data "$(python3 -c 'import numpy; import os; print(os.path.dirname(numpy.__file__))'):numpy" \
+    --hidden-import 'sophon.sail' \
+    --hidden-import 'cv2' \
+    --hidden-import 'distutils' \
+    app.py

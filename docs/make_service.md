@@ -43,7 +43,7 @@ docker logs -f smart-album-container
 ```
 ## Building and Running the Smart Album Service for SOC
 ```bash
-docker build -f packaging_file/Dockerfile_SOC -t my-smart-album:latest .
+docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1684X" -t my-smart-album:latest . 
 ```
 
 启动一个container：

@@ -12,7 +12,7 @@ update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
 update-alternatives --install /usr/bin/python  python  /usr/bin/python3.10 1
 update-alternatives --set python3 /usr/bin/python3.10
 update-alternatives --set python  /usr/bin/python3.10
-apt-get install -y --no-install-recommends file locales dkms libncurses5 build-essential gcc g++ unzip cmake libgl1
+apt-get install -y --no-install-recommends file locales libncurses5 build-essential gcc g++ unzip cmake libgl1
 python3.10 -m ensurepip --upgrade
 python3.10 -m pip install --upgrade pip
 ln -sf /usr/bin/pip3.10 /usr/bin/pip
@@ -23,4 +23,3 @@ cd /workspace/smart-album-tpu/
 pip install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 pip install pyinstaller -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 python3 -m dfss --install sail
-pip install numpy==1.25.0 -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple

@@ -7,7 +7,6 @@ numpy
 Pillow
 faiss-cpu
 openai
-timm
 toml
 tomli
 tokenizers
@@ -21,3 +20,6 @@ dfss
 tensorboard
 expecttest
 onnxscript
+urllib3
+chardet
+scikit-learn
