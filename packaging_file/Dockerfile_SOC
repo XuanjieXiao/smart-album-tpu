@@ -56,7 +56,7 @@ RUN apt-get install -y --no-install-recommends \
 
 # Add library path
 ENV PYTHONPATH "$PYTHONPATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/opencv-python/"
-ENV LD_LIBRARY_PATH "$LD_LIBRARY_PATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:/opt/sophon/sophon-soc-libisp_1.0.0/lib"
+ENV LD_LIBRARY_PATH "$LD_LIBRARY_PATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
 
 COPY ./requirements.txt .
 
@@ -142,6 +142,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
 # --- 1. 安装最基本的运行时依赖 ---
+ENV LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:$LD_LIBRARY_PATH"
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgl1 tzdata ca-certificates && \
     ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \

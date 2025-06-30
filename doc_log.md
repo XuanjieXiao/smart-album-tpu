@@ -74,7 +74,7 @@ pip3 install ./dist/sophon-3.10.3-py3-none-any.whl --force-reinstall
 
 
 export PYTHONPATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/opencv-python:$PYTHONPATH"
-export LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:/opt/sophon/sophon-soc-libisp_1.0.0/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:$LD_LIBRARY_PATH"
 
 
 
@@ -91,3 +91,24 @@ pyinstaller --onedir \
     --hidden-import 'cv2' \
     --hidden-import 'distutils' \
     app.py
+
+
+
+docker run --rm -it -v /dev:/dev -v /opt:/opt -v "$(pwd)/data:/app/data" -v "$(pwd)/uploads:/app/uploads" -v "$(pwd)/thumbnails:/app/thumbnails" -p 18080:18088 --entrypoint bash my-smart-album:latest
+
+
+
+
+
+docker run \
+    --privileged \
+    -d \
+    -it \
+    -v /dev:/dev \
+    -v /opt:/opt \
+    -v "$(pwd)/data:/app/data" \
+    -v "$(pwd)/uploads:/app/uploads" \
+    -v "$(pwd)/thumbnails:/app/thumbnails" \
+    -p 18088:18088 \
+    --name smart-album-container \
+    ubuntu:20.04
