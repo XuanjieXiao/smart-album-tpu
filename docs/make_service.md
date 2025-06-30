@@ -45,10 +45,13 @@ docker logs -f smart-album-container
 请注意修改对应的参数：
 ```
 --build-arg PLATFORM="BM1684X"
-可以选择 "BM1684X" 和 "BM1688"
+可以选择 "BM1684X" 、 "BM1688_1CORE" "BM1688_2CORE"
 ```
+
 ```bash
 docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1684X" -t smart-album:latest . 
+docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_1CORE" -t smart-album:latest . 
+docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart-album:latest . 
 ```
 
 启动一个container：

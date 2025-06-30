@@ -68,9 +68,9 @@ RUN pip3 install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pyp
 RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         python3 -m dfss --url=open@sophgo.com:/dfss_easy_install/sail/SAIL_8X/release/release_3.10.3/soc_BM1684_BM1684X/libsophon-0.5.2_sophonmw-0.13.0/py310/sophon_arm-3.10.3-py3-none-any.whl && \
         pip3 install sophon_arm-3.10.3-py3-none-any.whl; \
-    elif [ "$PLATFORM" = "BM1688" ]; then \
-        python3 -m dfss --url=open@sophgo.com:/dfss_easy_install/sail/SAIL_8X/release/release_3.10.3/soc_BM1684_BM1684X/libsophon-0.5.2_sophonmw-0.13.0/py310/sophon_arm-3.10.3-py3-none-any.whl && \
-        pip3 install sophon_arm-3.10.3-py3-none-any.whl; \
+    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
+        python3 -m dfss --url=open@sophgo.com:/dfss_easy_install/sail/master/soc_BM1688/v1.9_libsophon-0.4.10_sophonmedia-1.9.0/py310/sophon_arm-3.9.3-py3-none-any.whl && \
+        pip3 install sophon_arm-3.9.3-py3-none-any.whl; \
     else \
         echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
     fi
@@ -93,16 +93,34 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         else \
             echo "models/shibing624 already exists, skipping download."; \
         fi; \
-    elif [ "$PLATFORM" = "BM1688" ]; then \
+    elif [ "$PLATFORM" = "BM1688_1CORE" ]; then \
         if [ ! -d "models" ]; then \
             mkdir models; \
         fi; \
-        if [ ! -d "models/BM1688" ]; then \
-            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/BM1688.zip && \
-            unzip BM1688.zip -d ./models && \
-            rm BM1688.zip; \
+        if [ ! -d "models/BM1688_1CORE" ]; then \
+            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/BM1688_1CORE.zip && \
+            unzip BM1688_1CORE.zip -d ./models && \
+            rm BM1688_1CORE.zip; \
         else \
-            echo "models/BM1688 already exists, skipping download."; \
+            echo "models/BM1688_1CORE already exists, skipping download."; \
+        fi; \
+        if [ ! -d "models/shibing624" ]; then \
+            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip && \
+            unzip shibing624.zip -d ./models && \
+            rm shibing624.zip; \
+        else \
+            echo "models/shibing624 already exists, skipping download."; \
+        fi; \
+    elif [ "$PLATFORM" = "BM1688_2CORE" ]; then \
+        if [ ! -d "models" ]; then \
+            mkdir models; \
+        fi; \
+        if [ ! -d "models/BM1688_2CORE" ]; then \
+            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/BM1688_2CORE.zip && \
+            unzip BM1688_2CORE.zip -d ./models && \
+            rm BM1688_2CORE.zip; \
+        else \
+            echo "models/BM1688_2CORE already exists, skipping download."; \
         fi; \
         if [ ! -d "models/shibing624" ]; then \
             python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip && \
@@ -119,19 +137,52 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
 COPY . .
 
 # --- 11. 使用 PyInstaller 进行打包 ---
-RUN pyinstaller --onedir \
-    --name 'smart_album' \
-    --add-data 'models/BM1684X:models/BM1684X' \
-    --add-data 'models/shibing624:models/shibing624' \
-    --add-data 'static:static' \
-    --add-data 'templates:templates' \
-    --add-data 'data/app_config.json:data' \
-    --add-data 'clip/vocab.txt:clip' \
-    --add-data "$(python3 -c 'import numpy; import os; print(os.path.dirname(numpy.__file__))'):numpy" \
-    --hidden-import 'sophon.sail' \
-    --hidden-import 'cv2' \
-    --hidden-import 'distutils' \
-    app.py
+
+RUN if [ "$PLATFORM" = "BM1684X" ]; then \
+        pyinstaller --onedir \
+        --name 'smart_album' \
+        --add-data 'models/BM1684X:models/BM1684X' \
+        --add-data 'models/shibing624:models/shibing624' \
+        --add-data 'static:static' \
+        --add-data 'templates:templates' \
+        --add-data 'data/app_config.json:data' \
+        --add-data 'clip/vocab.txt:clip' \
+        --add-data "$(python3 -c 'import numpy; import os; print(os.path.dirname(numpy.__file__))'):numpy" \
+        --hidden-import 'sophon.sail' \
+        --hidden-import 'cv2' \
+        --hidden-import 'distutils' \
+        app.py; \
+    elif [ "$PLATFORM" = "BM1688_1CORE" ]; then \
+        pyinstaller --onedir \
+        --name 'smart_album' \
+        --add-data 'models/BM1688_1CORE:models/BM1688_1CORE' \
+        --add-data 'models/shibing624:models/shibing624' \
+        --add-data 'static:static' \
+        --add-data 'templates:templates' \
+        --add-data 'data/app_config.json:data' \
+        --add-data 'clip/vocab.txt:clip' \
+        --add-data "$(python3 -c 'import numpy; import os; print(os.path.dirname(numpy.__file__))'):numpy" \
+        --hidden-import 'sophon.sail' \
+        --hidden-import 'cv2' \
+        --hidden-import 'distutils' \
+        app.py; \
+    elif [ "$PLATFORM" = "BM1688_2CORE" ]; then \
+        pyinstaller --onedir \
+        --name 'smart_album' \
+        --add-data 'models/BM1688_2CORE:models/BM1688_2CORE' \
+        --add-data 'models/shibing624:models/shibing624' \
+        --add-data 'static:static' \
+        --add-data 'templates:templates' \
+        --add-data 'data/app_config.json:data' \
+        --add-data 'clip/vocab.txt:clip' \
+        --add-data "$(python3 -c 'import numpy; import os; print(os.path.dirname(numpy.__file__))'):numpy" \
+        --hidden-import 'sophon.sail' \
+        --hidden-import 'cv2' \
+        --hidden-import 'distutils' \
+        app.py; \
+    else \
+        echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
+    fi
 
 # =========================================================================
 # 第二阶段：最终镜像 (Final Image)
@@ -156,11 +207,10 @@ WORKDIR /app
 # --- 4. 从 builder 阶段拷贝打包好的可执行文件 ---
 COPY --from=builder /workspace/smart-album-tpu/dist/smart_album .
 
+# --- 4.1 拷贝 entrypoint 脚本 ---
+COPY --from=builder /workspace/smart-album-tpu/packaging_file/entrypoint.sh /app/entrypoint.sh
+
+RUN chmod +x /app/entrypoint.sh
+
 # --- 5. 设置容器启动命令 ---
-ENTRYPOINT ["./smart_album"]
-CMD [ \
-    "--image_model", "./models/BM1684X/cn_clip_image_vit_h_14_bm1684x_f16_1b.bmodel", \
-    "--text_model", "./models/BM1684X/cn_clip_text_vit_h_14_bm1684x_f16_1b.bmodel", \
-    "--bce_model", "./models/BM1684X/text2vec_base_chinese_bm1684x_f16_1b.bmodel", \
-    "--dev_id", "0" \
-]
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
