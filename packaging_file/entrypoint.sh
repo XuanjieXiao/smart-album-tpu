@@ -1,5 +1,12 @@
 #!/bin/bash
 set -e
+if [ "$PLATFORM" = "BM1684X" ]; then
+    export LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:$LD_LIBRARY_PATH"
+elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then
+    export LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:/opt/sophon/sophon-soc-libisp_1.0.0/lib:$LD_LIBRARY_PATH"
+else
+    echo "error: get ${PLATFORM}, not support platform!" && exit 1
+fi
 
 if [ "$PLATFORM" = "BM1684X" ]; then
     exec ./smart_album \

@@ -20,7 +20,7 @@ sudo systemctl restart docker
 ## Building and Running the Smart Album Service for X86
 通过以下命令新建X86服务器使用的BM1684X的docker的image：
 ```bash
-docker build -f packaging_file/Dockerfile_X86 -t my-smart-album:latest .
+docker build -f packaging_file/Dockerfile_X86 -t smart_album_x86_1684x_1core:latest .
 ```
 启动一个container：
 ```bash
@@ -35,7 +35,7 @@ docker run \
     -v "$(pwd)/thumbnails:/app/thumbnails" \
     -p 18080:18088 \
     --name smart-album-container \
-    my-smart-album:latest
+    smart_album_x86_1684x_1core:latest
 ```
 输出启动的container的日志：
 ```bash
@@ -49,9 +49,9 @@ docker logs -f smart-album-container
 ```
 
 ```bash
-docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1684X" -t smart-album:latest . 
-docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_1CORE" -t smart-album:latest . 
-docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart-album:latest . 
+docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1684X" -t smart_album_soc_1684x_1core:latest . 
+docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_1CORE" -t smart_album_soc_1688_1core:latest . 
+docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
 ```
 
 启动一个container：
@@ -66,8 +66,25 @@ docker run \
     -v "$(pwd)/uploads:/app/uploads" \
     -v "$(pwd)/thumbnails:/app/thumbnails" \
     -p 18088:18088 \
+    -e PLATFORM=BM1684X \
     --name smart-album-container \
-    smart-album:latest
+    smart_album_soc_1684x_1core:latest
+```
+
+```bash
+docker run \
+    --privileged \
+    -d \
+    -it \
+    -v /dev:/dev \
+    -v /opt:/opt \
+    -v "$(pwd)/data:/app/data" \
+    -v "$(pwd)/uploads:/app/uploads" \
+    -v "$(pwd)/thumbnails:/app/thumbnails" \
+    -p 18088:18088 \
+    -e PLATFORM=BM1688_2CORE \
+    --name smart-album-container \
+    smart_album_soc_1688_2core:latest
 ```
 
 ## Running the Smart Album Service in Interactive Mode(debug调试模式进入docker，方便进行问题定位)
@@ -82,5 +99,26 @@ docker run \
     -v "$(pwd)/thumbnails:/app/thumbnails" \
     -p 18088:18088 \
     --entrypoint bash \
-    smart-album:latest
+    smart_album_soc_1688_2core:latest
+```
+
+
+
+## 保存docker镜像
+```bash
+docker save -o smart_album_soc_1684x_1core.tar smart_album_soc_1684x_1core:latest
+docker save -o smart_album_soc_1688_1core.tar smart_album_soc_1688_1core:latest
+docker save -o smart_album_soc_1688_2core.tar smart_album_soc_1688_2core:latest
+```
+
+##加载docker镜像：
+```bash
+docker load < smart_album_soc_1684x_1core.tar
+docker load < smart_album_soc_1688_1core.tar
+docker load < smart_album_soc_1688_2core.tar
+```
+
+新的打包方法：
+```bash
+./build.sh BM1688_2CORE
 ```

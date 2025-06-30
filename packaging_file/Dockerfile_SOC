@@ -4,7 +4,8 @@
 # 基础镜像使用 Ubuntu 20.04。
 # 本阶段严格遵循您提供的安装脚本，以确保环境构建的准确性。
 # =========================================================================
-FROM ubuntu:20.04 AS builder
+# FROM ubuntu:20.04 AS builder
+FROM __BASE_IMAGE__ AS builder
 
 ARG PLATFORM="BM1684X"
 
@@ -56,7 +57,22 @@ RUN apt-get install -y --no-install-recommends \
 
 # Add library path
 ENV PYTHONPATH "$PYTHONPATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/opencv-python/"
-ENV LD_LIBRARY_PATH "$LD_LIBRARY_PATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
+ENV COMMON_LD_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
+ENV ISP_LD_PATH="/opt/sophon/sophon-soc-libisp_1.0.0/lib"
+
+# 确保 shell 生效
+SHELL ["/bin/bash", "-c"]
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"
+
+# 使用 RUN 判断平台并设置环境变量
+RUN if [ "$PLATFORM" = "BM1684X" ]; then \
+        echo "export LD_LIBRARY_PATH=$COMMON_LD_PATH" >> /etc/profile; \
+    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
+        echo "export LD_LIBRARY_PATH=$COMMON_LD_PATH:$ISP_LD_PATH" >> /etc/profile; \
+    else \
+        echo "Unsupported platform: $PLATFORM" && exit 1; \
+    fi
+
 
 COPY ./requirements.txt .
 
@@ -74,6 +90,11 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
     else \
         echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
     fi
+
+
+# --- 7. 拷贝项目文件 ---
+COPY . .
+
 
 RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         if [ ! -d "models" ]; then \
@@ -133,9 +154,6 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
     fi; 
 
-# --- 7. 拷贝项目文件 ---
-COPY . .
-
 # --- 11. 使用 PyInstaller 进行打包 ---
 
 RUN if [ "$PLATFORM" = "BM1684X" ]; then \
@@ -187,13 +205,32 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
 # =========================================================================
 # 第二阶段：最终镜像 (Final Image)
 # =========================================================================
-FROM ubuntu:20.04
+# FROM ubuntu:20.04
+FROM __BASE_IMAGE__
+
+
+ARG PLATFORM
+ENV PLATFORM=${PLATFORM}
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
 # --- 1. 安装最基本的运行时依赖 ---
-ENV LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:$LD_LIBRARY_PATH"
+ENV LD_COMMON="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
+ENV LD_ISP="/opt/sophon/sophon-soc-libisp_1.0.0/lib"
+
+
+# 默认设置 shell
+SHELL ["/bin/bash", "-c"]
+
+# 根据 PLATFORM 设置最终 LD_LIBRARY_PATH
+RUN if [ "$PLATFORM" = "BM1684X" ]; then \
+        echo "export LD_LIBRARY_PATH=$LD_COMMON:\$LD_LIBRARY_PATH" >> /etc/profile; \
+    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
+        echo "export LD_LIBRARY_PATH=$LD_COMMON:$LD_ISP:\$LD_LIBRARY_PATH" >> /etc/profile; \
+    else \
+        echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
+    fi
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgl1 tzdata ca-certificates && \
