@@ -770,3 +770,22 @@ body {
 .search-container-hero #image-search-upload-button-hero[style*="display: none"] + #image-search-preview-hero {
     border-radius: 25px 0 0 25px; /* Round left corners of preview */
 }
+
+
+.settings-input {
+    width: 100%;
+    max-width: 450px;
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.95em;
+}
+
+.action-button.primary-action {
+    background-color: #007bff;
+    font-size: 1em;
+    padding: 10px 20px;
+}
+.action-button.primary-action:hover {
+    background-color: #0056b3;
+}

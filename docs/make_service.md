@@ -3,7 +3,7 @@
 
 修改 /etc/docker/daemon.json（没有就新建）
 ```bash
-vim /etc/docker/daemon.json
+sudo vim /etc/docker/daemon.json
 ```
 添加以下内容：
 ```bash
@@ -49,9 +49,12 @@ docker logs -f smart-album-container
 ```
 
 ```bash
-docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1684X" -t smart_album_soc_1684x_1core:latest . 
-docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_1CORE" -t smart_album_soc_1688_1core:latest . 
-docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
+docker build -f packaging_file/Dockerfile_SOC_1684x --build-arg PLATFORM="BM1684X" -t smart_album_soc_1684x_1core:latest . 
+docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_1CORE" -t smart_album_soc_1688_1core:latest . 
+docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
+docker build -f packaging_file/Dockerfile_SOC_1688_20 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
+docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core_20:latest . 
+
 ```
 
 启动一个container：
@@ -109,6 +112,7 @@ docker run \
 docker save -o smart_album_soc_1684x_1core.tar smart_album_soc_1684x_1core:latest
 docker save -o smart_album_soc_1688_1core.tar smart_album_soc_1688_1core:latest
 docker save -o smart_album_soc_1688_2core.tar smart_album_soc_1688_2core:latest
+docker save -o smart_album_soc_1688_2core_20.tar smart_album_soc_1688_2core_20:latest
 ```
 
 ##加载docker镜像：

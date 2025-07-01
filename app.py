@@ -76,9 +76,16 @@ clip_preprocess = None
 
 # --- 应用配置 (可持久化或从配置文件加载) ---
 APP_CONFIG_FILE = os.path.join(CURRENT_DIR, "data", "app_config.json")
+# default_app_config = {
+#     "qwen_vl_analysis_enabled": True,
+#     "use_enhanced_search": True
+# }
 default_app_config = {
     "qwen_vl_analysis_enabled": True,
-    "use_enhanced_search": True
+    "use_enhanced_search": True,
+    "qwen_model_name": "Qwen2.5-VL-7B-Instruct",
+    "qwen_api_key": "HoUbVVd_L1Z0uLJJiq5ND13yfDreU4pkTHwoTbU_EMp31G_OLx_ONh5fIoa37cNM4mRfAvst7bR_9VUfi4-QXg",
+    "qwen_base_url": "https://www.sophnet.com/api/open-apis/v1"
 }
 app_config = {}
 
@@ -555,6 +562,34 @@ def get_image_details_api(image_db_id):
     return jsonify(details), 200
 
 
+# @app.route('/config/settings', methods=['GET', 'POST'])
+# def handle_app_settings():
+#     global app_config
+#     if request.method == 'GET':
+#         for key, value in default_app_config.items():
+#             app_config.setdefault(key, value)
+#         return jsonify(app_config), 200
+#     elif request.method == 'POST':
+#         data = request.get_json()
+#         if data is None:
+#             return jsonify({"error": "无效的JSON数据"}), 400
+        
+#         updated_any = False
+#         if 'qwen_vl_analysis_enabled' in data and isinstance(data['qwen_vl_analysis_enabled'], bool):
+#             app_config['qwen_vl_analysis_enabled'] = data['qwen_vl_analysis_enabled']
+#             logging.info(f"Qwen-VL全局分析状态已更新为: {app_config['qwen_vl_analysis_enabled']}")
+#             updated_any = True
+            
+#         if 'use_enhanced_search' in data and isinstance(data['use_enhanced_search'], bool):
+#             app_config['use_enhanced_search'] = data['use_enhanced_search']
+#             logging.info(f"使用增强搜索状态已更新为: {app_config['use_enhanced_search']}")
+#             updated_any = True
+        
+#         if updated_any:
+#             save_app_config()
+#             return jsonify({"message": "应用设置已更新。", "settings": app_config}), 200
+#         else:
+#             return jsonify({"message": "未提供有效设置进行更新。", "settings": app_config}), 200
 @app.route('/config/settings', methods=['GET', 'POST'])
 def handle_app_settings():
     global app_config
@@ -568,6 +603,8 @@ def handle_app_settings():
             return jsonify({"error": "无效的JSON数据"}), 400
         
         updated_any = False
+        
+        # 处理布尔值切换
         if 'qwen_vl_analysis_enabled' in data and isinstance(data['qwen_vl_analysis_enabled'], bool):
             app_config['qwen_vl_analysis_enabled'] = data['qwen_vl_analysis_enabled']
             logging.info(f"Qwen-VL全局分析状态已更新为: {app_config['qwen_vl_analysis_enabled']}")
@@ -578,12 +615,35 @@ def handle_app_settings():
             logging.info(f"使用增强搜索状态已更新为: {app_config['use_enhanced_search']}")
             updated_any = True
         
+        # --- 修改开始：处理新的Qwen配置项 ---
+        if 'qwen_model_name' in data and isinstance(data['qwen_model_name'], str):
+            app_config['qwen_model_name'] = data['qwen_model_name'].strip()
+            logging.info(f"Qwen 模型名称已更新为: {app_config['qwen_model_name']}")
+            updated_any = True
+            
+        if 'qwen_api_key' in data and isinstance(data['qwen_api_key'], str):
+            app_config['qwen_api_key'] = data['qwen_api_key'].strip()
+            logging.info(f"Qwen API Key 已更新。") # 避免在日志中打印密钥
+            updated_any = True
+
+        if 'qwen_base_url' in data and isinstance(data['qwen_base_url'], str):
+            app_config['qwen_base_url'] = data['qwen_base_url'].strip()
+            logging.info(f"Qwen Base URL 已更新为: {app_config['qwen_base_url']}")
+            updated_any = True
+        # --- 修改结束 ---
+
         if updated_any:
             save_app_config()
+            # --- 修改开始：使用新配置重新初始化Qwen客户端 ---
+            qwen_service.init_qwen_client(
+                api_key=app_config.get('qwen_api_key'),
+                base_url=app_config.get('qwen_base_url'),
+                model_name=app_config.get('qwen_model_name')
+            )
+            # --- 修改结束 ---
             return jsonify({"message": "应用设置已更新。", "settings": app_config}), 200
         else:
             return jsonify({"message": "未提供有效设置进行更新。", "settings": app_config}), 200
-
 
 @app.route('/enhance_image/<int:image_db_id>', methods=['POST'])
 def enhance_single_image_api(image_db_id):
@@ -869,6 +929,13 @@ if __name__ == '__main__':
     load_app_config()
     db.init_db() 
     fu.init_faiss_index() 
+
+    qwen_service.init_qwen_client(
+        api_key=app_config.get('qwen_api_key'),
+        base_url=app_config.get('qwen_base_url'),
+        model_name=app_config.get('qwen_model_name')
+    )
+    
     load_clip_model_on_startup(args)
     load_bce_model_on_startup(args)
     

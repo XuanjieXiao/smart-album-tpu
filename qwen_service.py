@@ -1,3 +1,41 @@
+# # qwen_service.py
+# from openai import OpenAI
+# import base64
+# import os
+# import logging
+# import json
+# import re # 引入正则表达式库
+# from PIL import Image # 用于图片处理
+# import io # 用于内存中的字节流操作
+# # import time # Potentially for delays between retries, uncomment if used
+# import html # For unescaping HTML entities if necessary
+
+# # 配置日志格式和等级
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s - %(levelname)s - %(module)s - %(message)s',
+#     handlers=[
+#         logging.StreamHandler(),
+#         # logging.FileHandler("analyze_images.log", encoding='utf-8')
+#     ]
+# )
+
+# # 配置 Qwen API
+# QWEN_API_KEY = os.environ.get("QWEN_API_KEY", "HoUbVVd_L1Z0uLJJiq5ND13yfDreU4pkTHwoTbU_EMp31G_OLx_ONh5fIoa37cNM4mRfAvst7bR_9VUfi4-QXg") # 请替换为您的真实API Key或确保环境变量已设置
+# QWEN_BASE_URL = os.environ.get("QWEN_BASE_URL", "https://www.sophnet.com/api/open-apis/v1") # 示例URL，请确认
+
+# client = None
+# if QWEN_API_KEY and QWEN_API_KEY not in ["sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "YOUR_QWEN_API_KEY", ""]:
+#     try:
+#         client = OpenAI(
+#             api_key=QWEN_API_KEY,
+#             base_url=QWEN_BASE_URL
+#         )
+#         logging.info("Qwen-VL 服务已使用API Key初始化。")
+#     except Exception as e:
+#         logging.error(f"初始化 Qwen-VL OpenAI 客户端失败: {e}")
+# else:
+#     logging.warning("QWEN_API_KEY 未配置或为默认占位符。Qwen-VL 服务可能无法正常工作。")
 # qwen_service.py
 from openai import OpenAI
 import base64
@@ -20,22 +58,35 @@ logging.basicConfig(
     ]
 )
 
-# 配置 Qwen API
-QWEN_API_KEY = os.environ.get("QWEN_API_KEY", "HoUbVVd_L1Z0uLJJiq5ND13yfDreU4pkTHwoTbU_EMp31G_OLx_ONh5fIoa37cNM4mRfAvst7bR_9VUfi4-QXg") # 请替换为您的真实API Key或确保环境变量已设置
-QWEN_BASE_URL = os.environ.get("QWEN_BASE_URL", "https://www.sophnet.com/api/open-apis/v1") # 示例URL，请确认
+# --- 修改开始 ---
 
 client = None
-if QWEN_API_KEY and QWEN_API_KEY not in ["sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "YOUR_QWEN_API_KEY", ""]:
+QWEN_MODEL_NAME = "Qwen2.5-VL-7B-Instruct" # 默认模型名称
+
+def init_qwen_client(api_key: str, base_url: str, model_name: str):
+    """
+    使用新的配置初始化或重新初始化Qwen-VL OpenAI客户端。
+    """
+    global client, QWEN_MODEL_NAME
+
+    if not api_key or not base_url or not model_name:
+        client = None
+        # 如果传入的model_name为空，则保留默认值
+        QWEN_MODEL_NAME = model_name or "Qwen2.5-VL-7B-Instruct"
+        logging.warning("由于缺少 API Key、Base URL 或模型名称，Qwen-VL 客户端未初始化。")
+        return
+
     try:
         client = OpenAI(
-            api_key=QWEN_API_KEY,
-            base_url=QWEN_BASE_URL
+            api_key=api_key,
+            base_url=base_url
         )
-        logging.info("Qwen-VL 服务已使用API Key初始化。")
+        QWEN_MODEL_NAME = model_name
+        logging.info(f"Qwen-VL 服务已初始化。模型: '{QWEN_MODEL_NAME}', Base URL: '{base_url}'")
     except Exception as e:
+        client = None
         logging.error(f"初始化 Qwen-VL OpenAI 客户端失败: {e}")
-else:
-    logging.warning("QWEN_API_KEY 未配置或为默认占位符。Qwen-VL 服务可能无法正常工作。")
+
 
 MAX_BASE64_IMAGE_CHARS = 7 * 1024 * 1024
 
@@ -165,13 +216,22 @@ def clean_and_format_keywords(raw_keywords) -> list:
 
 def analyze_image_content(image_path: str):
     if not client:
-        logging.error("Qwen-VL client 未初始化。无法分析图片。")
-        return {"description": "", "keywords": []}
+        logging.error("Qwen-VL 客户端未初始化。无法分析图片。请在控制面板中配置API Key, Base URL和模型名称。")
+        return {"description": "Qwen服务未配置", "keywords": []}
 
     logging.info(f"准备使用Qwen-VL分析图片: {image_path}")
     data_url = _prepare_image_data_for_qwen(image_path)
     if not data_url:
         return {"description": "", "keywords": []}
+    
+    # if not client:
+    #     logging.error("Qwen-VL client 未初始化。无法分析图片。")
+    #     return {"description": "", "keywords": []}
+
+    # logging.info(f"准备使用Qwen-VL分析图片: {image_path}")
+    # data_url = _prepare_image_data_for_qwen(image_path)
+    # if not data_url:
+    #     return {"description": "", "keywords": []}
 
     prompt_text = """请你严格作为图片分析JSON生成器运行。你的唯一输出必须是一个符合下述规范的JSON对象。
 
@@ -195,16 +255,27 @@ JSON输出格式 (严格遵守，不要添加任何额外字符、注释或Markd
         current_attempt_str = f"Attempt {attempt_num + 1}/{MAX_API_ATTEMPTS}"
         logging.info(f"开始图片分析 - {current_attempt_str} for image: {image_path}")
 
+        # try:
+        #     response = client.chat.completions.create(
+        #         model="Qwen2.5-VL-7B-Instruct",
+        #         messages=[
+        #             {"role": "user", "content": [
+        #                 {"type": "text", "text": prompt_text},
+        #                 {"type": "image_url", "image_url": {"url": data_url}}
+        #             ]}
+        #         ],
+        #         temperature=0.7,
+        #     )
         try:
             response = client.chat.completions.create(
-                model="Qwen2.5-VL-7B-Instruct",
+                model=QWEN_MODEL_NAME, # 使用全局变量
                 messages=[
                     {"role": "user", "content": [
                         {"type": "text", "text": prompt_text},
                         {"type": "image_url", "image_url": {"url": data_url}}
                     ]}
                 ],
-                temperature=0.7,
+                stream=False
             )
             result_content = response.choices[0].message.content.strip()
             last_successful_api_content_if_unparsed = result_content

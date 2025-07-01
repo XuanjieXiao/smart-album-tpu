@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<!-- <body>
     <div class="container controls-page">
         <header class="page-header">
             <h1>控制面板</h1>
@@ -42,6 +42,64 @@
             </div>
             <div id="upload-status-controls" class="status-message"></div>
             </section>
+        
+    </div>
+    <script src="{{ url_for('static', filename='controls.js') }}"></script>
+</body> -->
+<body>
+    <div class="container controls-page">
+        <header class="page-header">
+            <h1>控制面板</h1>
+            <a href="{{ url_for('index') }}" class="back-to-main-btn">&larr; 返回主页</a>
+        </header>
+
+        <section class="control-options-section">
+            <h2>应用设置</h2>
+            <div class="control-group">
+                <label for="qwen-analysis-toggle-controls">Qwen-VL图片分析 (上传时自动):</label>
+                <input type="checkbox" id="qwen-analysis-toggle-controls">
+                <span id="qwen-status-text-controls">加载中...</span>
+            </div>
+            <div class="control-group">
+                <label for="use-enhanced-search-toggle-controls">使用增强搜索 (利用Qwen描述):</label>
+                <input type="checkbox" id="use-enhanced-search-toggle-controls">
+                <span id="use-enhanced-search-status-controls"></span> 
+            </div>
+        </section>
+        
+        <section class="control-options-section">
+            <h2>Qwen-VL 服务设置</h2>
+            <p class="control-note" style="margin-bottom: 15px; font-size: 0.9em; color: #555;">这些设置将用于连接Qwen-VL模型进行图片描述和关键词提取。修改后点击下方保存按钮将立即生效。</p>
+            <div class="control-group">
+                <label for="qwen-model-name-input">模型名称 (Model Name):</label>
+                <input type="text" id="qwen-model-name-input" class="settings-input" placeholder="例如: Qwen2.5-VL-7B-Instruct">
+            </div>
+            <div class="control-group">
+                <label for="qwen-api-key-input">API Key:</label>
+                <input type="password" id="qwen-api-key-input" class="settings-input" placeholder="输入您的 Qwen API Key">
+            </div>
+            <div class="control-group">
+                <label for="qwen-base-url-input">API Base URL:</label>
+                <input type="text" id="qwen-base-url-input" class="settings-input" placeholder="例如: https://www.sophnet.com/api/open-apis/v1">
+            </div>
+        </section>
+
+        <section class="control-options-section" style="border-top: 2px solid #007bff; padding-top: 20px; background-color: transparent; border: none;">
+             <div class="control-group">
+                <button id="save-all-settings-button" class="action-button primary-action"><i class="fas fa-save"></i> 保存所有设置</button>
+                <span id="save-settings-status" class="status-message" style="margin-left: 10px;"></span>
+            </div>
+        </section>
+        <section class="upload-section-controls">
+            <h2>上传图片</h2>
+            <div class="control-group upload-control-group-controls">
+                <label for="unified-upload-input-controls">选择图片上传:</label>
+                <input type="file" id="unified-upload-input-controls" multiple accept="image/*" class="compact-input">
+                <button id="unified-upload-button-controls" class="compact-button"><i class="fas fa-upload"></i> 上传</button>
+                <button id="cancel-upload-button-controls" class="compact-button danger-button" style="display: none;"><i class="fas fa-times-circle"></i> 停止上传</button>
+            </div>
+            <div id="upload-status-controls" class="status-message"></div>
+        </section>
         
     </div>
     <script src="{{ url_for('static', filename='controls.js') }}"></script>

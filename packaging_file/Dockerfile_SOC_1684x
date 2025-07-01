@@ -17,7 +17,7 @@ WORKDIR /workspace/smart-album-tpu
 
 # --- 1. 环境准备：设置时区和安装 PPA 添加工具 ---
 RUN apt-get update && \
-    apt-get install -y tzdata && \
+    apt-get install -y tzdata apt-utils wget && \
     ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata && \
     apt-get install -y software-properties-common
@@ -56,22 +56,7 @@ RUN apt-get install -y --no-install-recommends \
 
 # Add library path
 ENV PYTHONPATH "$PYTHONPATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/opencv-python/"
-ENV COMMON_LD_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
-ENV ISP_LD_PATH="/opt/sophon/sophon-soc-libisp_1.0.0/lib"
-
-# 确保 shell 生效
-SHELL ["/bin/bash", "-c"]
-ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"
-
-# 使用 RUN 判断平台并设置环境变量
-RUN if [ "$PLATFORM" = "BM1684X" ]; then \
-        echo "export LD_LIBRARY_PATH=$COMMON_LD_PATH" >> /etc/profile; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
-        echo "export LD_LIBRARY_PATH=$COMMON_LD_PATH:$ISP_LD_PATH" >> /etc/profile; \
-    else \
-        echo "Unsupported platform: $PLATFORM" && exit 1; \
-    fi
-
+ENV LD_LIBRARY_PATH "$LD_LIBRARY_PATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
 
 COPY ./requirements.txt .
 
@@ -83,17 +68,12 @@ RUN pip3 install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pyp
 RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         python3 -m dfss --url=open@sophgo.com:/dfss_easy_install/sail/SAIL_8X/release/release_3.10.3/soc_BM1684_BM1684X/libsophon-0.5.2_sophonmw-0.13.0/py310/sophon_arm-3.10.3-py3-none-any.whl && \
         pip3 install sophon_arm-3.10.3-py3-none-any.whl; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
-        python3 -m dfss --url=open@sophgo.com:/dfss_easy_install/sail/master/soc_BM1688/v1.9_libsophon-0.4.10_sophonmedia-1.9.0/py310/sophon_arm-3.9.3-py3-none-any.whl && \
-        pip3 install sophon_arm-3.9.3-py3-none-any.whl; \
     else \
         echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
     fi
 
-
 # --- 7. 拷贝项目文件 ---
 COPY . .
-
 
 RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         if [ ! -d "models" ]; then \
@@ -113,45 +93,11 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         else \
             echo "models/shibing624 already exists, skipping download."; \
         fi; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ]; then \
-        if [ ! -d "models" ]; then \
-            mkdir models; \
-        fi; \
-        if [ ! -d "models/BM1688_1CORE" ]; then \
-            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/BM1688_1CORE.zip && \
-            unzip BM1688_1CORE.zip -d ./models && \
-            rm BM1688_1CORE.zip; \
-        else \
-            echo "models/BM1688_1CORE already exists, skipping download."; \
-        fi; \
-        if [ ! -d "models/shibing624" ]; then \
-            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip && \
-            unzip shibing624.zip -d ./models && \
-            rm shibing624.zip; \
-        else \
-            echo "models/shibing624 already exists, skipping download."; \
-        fi; \
-    elif [ "$PLATFORM" = "BM1688_2CORE" ]; then \
-        if [ ! -d "models" ]; then \
-            mkdir models; \
-        fi; \
-        if [ ! -d "models/BM1688_2CORE" ]; then \
-            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/BM1688_2CORE.zip && \
-            unzip BM1688_2CORE.zip -d ./models && \
-            rm BM1688_2CORE.zip; \
-        else \
-            echo "models/BM1688_2CORE already exists, skipping download."; \
-        fi; \
-        if [ ! -d "models/shibing624" ]; then \
-            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip && \
-            unzip shibing624.zip -d ./models && \
-            rm shibing624.zip; \
-        else \
-            echo "models/shibing624 already exists, skipping download."; \
-        fi; \
     else \
         echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
     fi; 
+
+
 
 # --- 11. 使用 PyInstaller 进行打包 ---
 
@@ -159,34 +105,6 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         pyinstaller --onedir \
         --name 'smart_album' \
         --add-data 'models/BM1684X:models/BM1684X' \
-        --add-data 'models/shibing624:models/shibing624' \
-        --add-data 'static:static' \
-        --add-data 'templates:templates' \
-        --add-data 'data/app_config.json:data' \
-        --add-data 'clip/vocab.txt:clip' \
-        --add-data "$(python3 -c 'import numpy; import os; print(os.path.dirname(numpy.__file__))'):numpy" \
-        --hidden-import 'sophon.sail' \
-        --hidden-import 'cv2' \
-        --hidden-import 'distutils' \
-        app.py; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ]; then \
-        pyinstaller --onedir \
-        --name 'smart_album' \
-        --add-data 'models/BM1688_1CORE:models/BM1688_1CORE' \
-        --add-data 'models/shibing624:models/shibing624' \
-        --add-data 'static:static' \
-        --add-data 'templates:templates' \
-        --add-data 'data/app_config.json:data' \
-        --add-data 'clip/vocab.txt:clip' \
-        --add-data "$(python3 -c 'import numpy; import os; print(os.path.dirname(numpy.__file__))'):numpy" \
-        --hidden-import 'sophon.sail' \
-        --hidden-import 'cv2' \
-        --hidden-import 'distutils' \
-        app.py; \
-    elif [ "$PLATFORM" = "BM1688_2CORE" ]; then \
-        pyinstaller --onedir \
-        --name 'smart_album' \
-        --add-data 'models/BM1688_2CORE:models/BM1688_2CORE' \
         --add-data 'models/shibing624:models/shibing624' \
         --add-data 'static:static' \
         --add-data 'templates:templates' \
@@ -206,29 +124,11 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
 # =========================================================================
 FROM ubuntu:20.04
 
-
-ARG PLATFORM
-ENV PLATFORM=${PLATFORM}
-
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
 # --- 1. 安装最基本的运行时依赖 ---
-ENV LD_COMMON="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
-ENV LD_ISP="/opt/sophon/sophon-soc-libisp_1.0.0/lib"
-
-
-# 默认设置 shell
-SHELL ["/bin/bash", "-c"]
-
-# 根据 PLATFORM 设置最终 LD_LIBRARY_PATH
-RUN if [ "$PLATFORM" = "BM1684X" ]; then \
-        echo "export LD_LIBRARY_PATH=$LD_COMMON:\$LD_LIBRARY_PATH" >> /etc/profile; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
-        echo "export LD_LIBRARY_PATH=$LD_COMMON:$LD_ISP:\$LD_LIBRARY_PATH" >> /etc/profile; \
-    else \
-        echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
-    fi
+ENV LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:$LD_LIBRARY_PATH"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgl1 tzdata ca-certificates && \

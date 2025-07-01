@@ -6,7 +6,7 @@
 # =========================================================================
 FROM ubuntu:20.04 AS builder
 
-ARG PLATFORM="BM1684X"
+ARG PLATFORM="BM1688_2CORE"
 
 # 设置环境变量
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,7 +17,7 @@ WORKDIR /workspace/smart-album-tpu
 
 # --- 1. 环境准备：设置时区和安装 PPA 添加工具 ---
 RUN apt-get update && \
-    apt-get install -y tzdata && \
+    apt-get install -y tzdata apt-utils wget && \
     ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata && \
     apt-get install -y software-properties-common
@@ -56,22 +56,7 @@ RUN apt-get install -y --no-install-recommends \
 
 # Add library path
 ENV PYTHONPATH "$PYTHONPATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/opencv-python/"
-ENV COMMON_LD_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
-ENV ISP_LD_PATH="/opt/sophon/sophon-soc-libisp_1.0.0/lib"
-
-# 确保 shell 生效
-SHELL ["/bin/bash", "-c"]
-ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"
-
-# 使用 RUN 判断平台并设置环境变量
-RUN if [ "$PLATFORM" = "BM1684X" ]; then \
-        echo "export LD_LIBRARY_PATH=$COMMON_LD_PATH" >> /etc/profile; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
-        echo "export LD_LIBRARY_PATH=$COMMON_LD_PATH:$ISP_LD_PATH" >> /etc/profile; \
-    else \
-        echo "Unsupported platform: $PLATFORM" && exit 1; \
-    fi
-
+ENV LD_LIBRARY_PATH "$LD_LIBRARY_PATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:/opt/sophon/sophon-soc-libisp_1.0.0/lib"
 
 COPY ./requirements.txt .
 
@@ -90,10 +75,8 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
     fi
 
-
 # --- 7. 拷贝项目文件 ---
 COPY . .
-
 
 RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         if [ ! -d "models" ]; then \
@@ -153,6 +136,7 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
     fi; 
 
+
 # --- 11. 使用 PyInstaller 进行打包 ---
 
 RUN if [ "$PLATFORM" = "BM1684X" ]; then \
@@ -206,29 +190,11 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
 # =========================================================================
 FROM ubuntu:20.04
 
-
-ARG PLATFORM
-ENV PLATFORM=${PLATFORM}
-
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
 # --- 1. 安装最基本的运行时依赖 ---
-ENV LD_COMMON="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
-ENV LD_ISP="/opt/sophon/sophon-soc-libisp_1.0.0/lib"
-
-
-# 默认设置 shell
-SHELL ["/bin/bash", "-c"]
-
-# 根据 PLATFORM 设置最终 LD_LIBRARY_PATH
-RUN if [ "$PLATFORM" = "BM1684X" ]; then \
-        echo "export LD_LIBRARY_PATH=$LD_COMMON:\$LD_LIBRARY_PATH" >> /etc/profile; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
-        echo "export LD_LIBRARY_PATH=$LD_COMMON:$LD_ISP:\$LD_LIBRARY_PATH" >> /etc/profile; \
-    else \
-        echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
-    fi
+ENV LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:/opt/sophon/sophon-soc-libisp_1.0.0/lib:$LD_LIBRARY_PATH"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgl1 tzdata ca-certificates && \

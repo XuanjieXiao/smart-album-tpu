@@ -1,12 +1,12 @@
 # =========================================================================
 # 第一阶段：构建器 (Builder)
 #
-# 基础镜像使用 Ubuntu 20.04。
+# 基础镜像使用 Ubuntu 22.04。
 # 本阶段严格遵循您提供的安装脚本，以确保环境构建的准确性。
 # =========================================================================
-FROM ubuntu:20.04 AS builder
+FROM ubuntu:22.04 AS builder
 
-ARG PLATFORM="BM1684X"
+ARG PLATFORM="BM1688_2CORE"
 
 # 设置环境变量
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,38 +17,30 @@ WORKDIR /workspace/smart-album-tpu
 
 # --- 1. 环境准备：设置时区和安装 PPA 添加工具 ---
 RUN apt-get update && \
-    apt-get install -y tzdata && \
+    apt-get install -y tzdata libssl3 apt-utils wget && \
     ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata && \
     apt-get install -y software-properties-common
 
-# --- 2. 添加 PPA 并安装 Python 3.10 ---
+RUN wget http://ports.ubuntu.com/ubuntu-ports/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_arm64.deb && \
+    dpkg -i libssl1.1_1.1.1f-1ubuntu2.24_arm64.deb && \
+    rm libssl1.1_1.1.1f-1ubuntu2.24_arm64.deb
+
 RUN echo "Using python version: 3.10"; \
     apt-get update && \
-    apt-get install -y --no-install-recommends software-properties-common gnupg2 dirmngr&& \
-    echo "deb http://launchpad.proxy.ustclug.org/deadsnakes/ppa/ubuntu focal main" > /etc/apt/sources.list.d/deadsnakes-ppa.list && \
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys BA6932366A755776 && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends python3.10 python3.10-venv python3.10-dev python3.10-distutils python3-pip libssl-dev curl
+    apt-get install -y --no-install-recommends \
+        python3 python3-venv python3-dev python3-distutils python3-pip curl
 
-# --- 3. 配置 Python 的默认版本 ---
-# **(已拆分)** 对应脚本中 `update-alternatives` for python 的命令
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
-    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 && \
-    update-alternatives --set python3 /usr/bin/python3.10 && \
-    update-alternatives --set python /usr/bin/python3.10
-
-# --- 4. 升级 pip ---
-RUN python3.10 -m ensurepip --upgrade && \
-    python3.10 -m pip install --upgrade pip
+# --- 4. 安装 pip（不要使用 ensurepip，Ubuntu 禁用）---
+RUN apt-get update && \
+    apt-get install -y python3-pip
 
 # --- 5. 配置 pip 的默认版本 ---
-RUN ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3.10 && \
-    ln -sf /usr/bin/pip3.10 /usr/bin/pip && \
-    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3 && \
-    update-alternatives --install /usr/bin/pip3 pip3 /usr/bin/pip3.10 1 && \
-    update-alternatives --install /usr/bin/pip pip /usr/bin/pip3.10 1 && \
-    update-alternatives --set pip /usr/bin/pip3.10
+RUN update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+
+RUN python3 --version && pip --version
+
 
 # --- 6. 安装其他系统依赖 ---
 RUN apt-get install -y --no-install-recommends \
@@ -56,22 +48,7 @@ RUN apt-get install -y --no-install-recommends \
 
 # Add library path
 ENV PYTHONPATH "$PYTHONPATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/opencv-python/"
-ENV COMMON_LD_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
-ENV ISP_LD_PATH="/opt/sophon/sophon-soc-libisp_1.0.0/lib"
-
-# 确保 shell 生效
-SHELL ["/bin/bash", "-c"]
-ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"
-
-# 使用 RUN 判断平台并设置环境变量
-RUN if [ "$PLATFORM" = "BM1684X" ]; then \
-        echo "export LD_LIBRARY_PATH=$COMMON_LD_PATH" >> /etc/profile; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
-        echo "export LD_LIBRARY_PATH=$COMMON_LD_PATH:$ISP_LD_PATH" >> /etc/profile; \
-    else \
-        echo "Unsupported platform: $PLATFORM" && exit 1; \
-    fi
-
+ENV LD_LIBRARY_PATH "$LD_LIBRARY_PATH:/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:/opt/sophon/sophon-soc-libisp_1.0.0/lib"
 
 COPY ./requirements.txt .
 
@@ -80,10 +57,7 @@ RUN pip3 install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pyp
     pip3 install pyinstaller -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 
 # --- 10. 编译和安装 Sophon-SAIL ---
-RUN if [ "$PLATFORM" = "BM1684X" ]; then \
-        python3 -m dfss --url=open@sophgo.com:/dfss_easy_install/sail/SAIL_8X/release/release_3.10.3/soc_BM1684_BM1684X/libsophon-0.5.2_sophonmw-0.13.0/py310/sophon_arm-3.10.3-py3-none-any.whl && \
-        pip3 install sophon_arm-3.10.3-py3-none-any.whl; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
+RUN if [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
         python3 -m dfss --url=open@sophgo.com:/dfss_easy_install/sail/master/soc_BM1688/v1.9_libsophon-0.4.10_sophonmedia-1.9.0/py310/sophon_arm-3.9.3-py3-none-any.whl && \
         pip3 install sophon_arm-3.9.3-py3-none-any.whl; \
     else \
@@ -94,26 +68,7 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
 # --- 7. 拷贝项目文件 ---
 COPY . .
 
-
-RUN if [ "$PLATFORM" = "BM1684X" ]; then \
-        if [ ! -d "models" ]; then \
-            mkdir models; \
-        fi; \
-        if [ ! -d "models/BM1684X" ]; then \
-            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/BM1684X.zip && \
-            unzip BM1684X.zip -d ./models && \
-            rm BM1684X.zip; \
-        else \
-            echo "models/BM1684X already exists, skipping download."; \
-        fi; \
-        if [ ! -d "models/shibing624" ]; then \
-            python3 -m dfss --url=open@sophgo.com:SILK/level-4/smart-album/shibing624.zip && \
-            unzip shibing624.zip -d ./models && \
-            rm shibing624.zip; \
-        else \
-            echo "models/shibing624 already exists, skipping download."; \
-        fi; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ]; then \
+RUN if [ "$PLATFORM" = "BM1688_1CORE" ]; then \
         if [ ! -d "models" ]; then \
             mkdir models; \
         fi; \
@@ -153,23 +108,11 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
         echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
     fi; 
 
+
+
 # --- 11. 使用 PyInstaller 进行打包 ---
 
-RUN if [ "$PLATFORM" = "BM1684X" ]; then \
-        pyinstaller --onedir \
-        --name 'smart_album' \
-        --add-data 'models/BM1684X:models/BM1684X' \
-        --add-data 'models/shibing624:models/shibing624' \
-        --add-data 'static:static' \
-        --add-data 'templates:templates' \
-        --add-data 'data/app_config.json:data' \
-        --add-data 'clip/vocab.txt:clip' \
-        --add-data "$(python3 -c 'import numpy; import os; print(os.path.dirname(numpy.__file__))'):numpy" \
-        --hidden-import 'sophon.sail' \
-        --hidden-import 'cv2' \
-        --hidden-import 'distutils' \
-        app.py; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ]; then \
+RUN if [ "$PLATFORM" = "BM1688_1CORE" ]; then \
         pyinstaller --onedir \
         --name 'smart_album' \
         --add-data 'models/BM1688_1CORE:models/BM1688_1CORE' \
@@ -204,31 +147,13 @@ RUN if [ "$PLATFORM" = "BM1684X" ]; then \
 # =========================================================================
 # 第二阶段：最终镜像 (Final Image)
 # =========================================================================
-FROM ubuntu:20.04
-
-
-ARG PLATFORM
-ENV PLATFORM=${PLATFORM}
+FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
 # --- 1. 安装最基本的运行时依赖 ---
-ENV LD_COMMON="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib"
-ENV LD_ISP="/opt/sophon/sophon-soc-libisp_1.0.0/lib"
-
-
-# 默认设置 shell
-SHELL ["/bin/bash", "-c"]
-
-# 根据 PLATFORM 设置最终 LD_LIBRARY_PATH
-RUN if [ "$PLATFORM" = "BM1684X" ]; then \
-        echo "export LD_LIBRARY_PATH=$LD_COMMON:\$LD_LIBRARY_PATH" >> /etc/profile; \
-    elif [ "$PLATFORM" = "BM1688_1CORE" ] || [ "$PLATFORM" = "BM1688_2CORE" ]; then \
-        echo "export LD_LIBRARY_PATH=$LD_COMMON:$LD_ISP:\$LD_LIBRARY_PATH" >> /etc/profile; \
-    else \
-        echo "error: get ${PLATFORM}, not support platform!" && exit 1; \
-    fi
+ENV LD_LIBRARY_PATH="/opt/sophon/libsophon-current/lib:/opt/sophon/sophon-opencv-latest/lib:/opt/sophon/sophon-ffmpeg-latest/lib:/opt/sophon/sophon-soc-libisp_1.0.0/lib:$LD_LIBRARY_PATH"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgl1 tzdata ca-certificates && \
