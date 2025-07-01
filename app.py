@@ -76,10 +76,6 @@ clip_preprocess = None
 
 # --- 应用配置 (可持久化或从配置文件加载) ---
 APP_CONFIG_FILE = os.path.join(CURRENT_DIR, "data", "app_config.json")
-# default_app_config = {
-#     "qwen_vl_analysis_enabled": True,
-#     "use_enhanced_search": True
-# }
 default_app_config = {
     "qwen_vl_analysis_enabled": True,
     "use_enhanced_search": True,
@@ -562,34 +558,6 @@ def get_image_details_api(image_db_id):
     return jsonify(details), 200
 
 
-# @app.route('/config/settings', methods=['GET', 'POST'])
-# def handle_app_settings():
-#     global app_config
-#     if request.method == 'GET':
-#         for key, value in default_app_config.items():
-#             app_config.setdefault(key, value)
-#         return jsonify(app_config), 200
-#     elif request.method == 'POST':
-#         data = request.get_json()
-#         if data is None:
-#             return jsonify({"error": "无效的JSON数据"}), 400
-        
-#         updated_any = False
-#         if 'qwen_vl_analysis_enabled' in data and isinstance(data['qwen_vl_analysis_enabled'], bool):
-#             app_config['qwen_vl_analysis_enabled'] = data['qwen_vl_analysis_enabled']
-#             logging.info(f"Qwen-VL全局分析状态已更新为: {app_config['qwen_vl_analysis_enabled']}")
-#             updated_any = True
-            
-#         if 'use_enhanced_search' in data and isinstance(data['use_enhanced_search'], bool):
-#             app_config['use_enhanced_search'] = data['use_enhanced_search']
-#             logging.info(f"使用增强搜索状态已更新为: {app_config['use_enhanced_search']}")
-#             updated_any = True
-        
-#         if updated_any:
-#             save_app_config()
-#             return jsonify({"message": "应用设置已更新。", "settings": app_config}), 200
-#         else:
-#             return jsonify({"message": "未提供有效设置进行更新。", "settings": app_config}), 200
 @app.route('/config/settings', methods=['GET', 'POST'])
 def handle_app_settings():
     global app_config
@@ -935,7 +903,7 @@ if __name__ == '__main__':
         base_url=app_config.get('qwen_base_url'),
         model_name=app_config.get('qwen_model_name')
     )
-    
+
     load_clip_model_on_startup(args)
     load_bce_model_on_startup(args)
     
