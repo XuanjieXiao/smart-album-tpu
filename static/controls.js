@@ -56,6 +56,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // 页面加载时执行
     loadAppSettings();
     
+    const qwenApiKeyInputJs = document.getElementById('qwen-api-key-input');
+    const toggleApiKeyVisibilityButton = document.getElementById('toggle-api-key-visibility');
+
+    if (toggleApiKeyVisibilityButton && qwenApiKeyInputJs) {
+        // 使用 mousedown 事件而不是 click，以防止在切换类型时输入框失去焦点
+        toggleApiKeyVisibilityButton.addEventListener('mousedown', (e) => {
+            e.preventDefault(); // 防止按钮抢占输入框的焦点
+        });
+
+        toggleApiKeyVisibilityButton.addEventListener('click', () => {
+            const icon = toggleApiKeyVisibilityButton.querySelector('i');
+            if (qwenApiKeyInputJs.type === 'password') {
+                qwenApiKeyInputJs.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                qwenApiKeyInputJs.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        });
+    }
     // "保存所有设置" 按钮的事件监听
     if (saveAllSettingsButton) {
         saveAllSettingsButton.addEventListener('click', () => {

@@ -35,9 +35,18 @@
                 <label for="qwen-model-name-input">模型名称 (Model Name):</label>
                 <input type="text" id="qwen-model-name-input" class="settings-input" placeholder="例如: Qwen2.5-VL-7B-Instruct">
             </div>
-            <div class="control-group">
+            <!-- <div class="control-group">
                 <label for="qwen-api-key-input">API Key:</label>
                 <input type="password" id="qwen-api-key-input" class="settings-input" placeholder="输入您的 Qwen API Key">
+            </div> -->
+            <div class="control-group">
+                <label for="qwen-api-key-input">API Key:</label>
+                <div class="input-with-button-container">
+                    <input type="password" id="qwen-api-key-input" class="settings-input" placeholder="输入您的 Qwen API Key">
+                    <button type="button" id="toggle-api-key-visibility" class="visibility-toggle-btn" title="显示/隐藏 API Key">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
             </div>
             <div class="control-group">
                 <label for="qwen-base-url-input">API Base URL:</label>
