@@ -58,7 +58,6 @@ docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_
 docker build -f packaging_file/Dockerfile_SOC_1688_20 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
 #可以编译"BM1684X" 、 "BM1688_1CORE" "BM1688_2CORE"三种平台，为ubuntu20.04版本
 docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core_20:latest . 
-
 ```
 
 启动一个container，注意选择 **-e PLATFORM=BM1684X** 参数，保证正确的选择环境：
