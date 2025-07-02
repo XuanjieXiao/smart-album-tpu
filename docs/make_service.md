@@ -55,7 +55,7 @@ docker build -f packaging_file/Dockerfile_SOC_1684x --build-arg PLATFORM="BM1684
 docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_1CORE" -t smart_album_soc_1688_1core:latest . 
 docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
 # 编译打包BM1688的20.04的版本
-docker build -f packaging_file/Dockerfile_SOC_1688_20 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
+docker build -f packaging_file/Dockerfile_SOC_1688_20 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core_20:v1.0.0 . 
 #可以编译"BM1684X" 、 "BM1688_1CORE" "BM1688_2CORE"三种平台，为ubuntu20.04版本
 docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core_20:latest . 
 ```

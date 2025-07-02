@@ -28,7 +28,12 @@ def init_qwen_client(api_key: str, base_url: str, model_name: str):
     """
     使用新的配置初始化或重新初始化Qwen-VL OpenAI客户端。
     """
-    global client, QWEN_MODEL_NAME
+    global client, QWEN_MODEL_NAME, model_flag
+
+    if api_key == "null":
+        model_flag = "local_model"
+    else:
+        model_flag = "online_model"
 
     if not api_key or not base_url or not model_name:
         client = None
@@ -207,17 +212,6 @@ JSON输出格式 (严格遵守，不要添加任何额外字符、注释或Markd
         current_attempt_str = f"Attempt {attempt_num + 1}/{MAX_API_ATTEMPTS}"
         logging.info(f"开始图片分析 - {current_attempt_str} for image: {image_path}")
 
-        # try:
-        #     response = client.chat.completions.create(
-        #         model="Qwen2.5-VL-7B-Instruct",
-        #         messages=[
-        #             {"role": "user", "content": [
-        #                 {"type": "text", "text": prompt_text},
-        #                 {"type": "image_url", "image_url": {"url": data_url}}
-        #             ]}
-        #         ],
-        #         temperature=0.7,
-        #     )
         try:
             response = client.chat.completions.create(
                 model=QWEN_MODEL_NAME, # 使用全局变量
@@ -229,7 +223,10 @@ JSON输出格式 (严格遵守，不要添加任何额外字符、注释或Markd
                 ],
                 stream=False
             )
-            result_content = response.choices[0].message.content.strip()
+            if model_flag == "local_model":
+                result_content = response.choices[0].message[0].content.strip()
+            else:
+                result_content = response.choices[0].message.content.strip()
             last_successful_api_content_if_unparsed = result_content
             last_api_call_exception_details = None
             logging.info(f"图片分析API调用成功: {image_path} ({current_attempt_str})")

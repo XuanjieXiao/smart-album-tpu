@@ -244,6 +244,7 @@ def process_single_image_upload(file_storage):
                 
                 if app_config.get("qwen_vl_analysis_enabled", True):
                     logging.info(f"全局Qwen-VL分析已开启，开始分析图片 ID: {image_db_id}")
+                    print('original_path_abs:    ', original_path_abs)
                     qwen_result = qwen_service.analyze_image_content(original_path_abs) # Use absolute path for analysis
                     if qwen_result and (qwen_result.get("description") or qwen_result.get("keywords")):
                         db.update_image_enhancement(image_db_id, qwen_result["description"], qwen_result["keywords"])
