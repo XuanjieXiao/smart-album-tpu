@@ -190,20 +190,25 @@ def analyze_image_content(image_path: str):
     data_url = _prepare_image_data_for_qwen(image_path)
     if not data_url:
         return {"description": "", "keywords": []}
-    prompt_text = "用中文详细描述这张图，总字数不要超过450。"
-#     prompt_text = """请你严格作为图片分析JSON生成器运行。你的唯一输出必须是一个符合下述规范的JSON对象。
+    
+    if model_flag == "local_model":
+        prompt_text = "用中文详细描述这张图，总字数不要超过450。"
+    elif model_flag == "online_model":
+        prompt_text = """请你严格作为图片分析JSON生成器运行。你的唯一输出必须是一个符合下述规范的JSON对象。
 
-# 图片分析要求：
-# 1.  **描述 (description)**: 用中文详细描述图片内容、物品、元素和场景。描述应简洁明了。此描述文本中绝对不允许包含任何HTML标签 (如 `<p>`, `<b>` 等)。如果描述中需要使用英文双引号 (`"`)，则必须将其转义为 `\\"`.
-# 2.  **关键词 (keywords)**: 从图片内容中提取最多10个最具代表性的中文关键词。此字段必须是一个JSON数组，其中每个元素都是一个独立的、纯净的中文关键词字符串。例如：`["天空", "建筑", "城市"]`。单个关键词字符串内部不应包含任何引号、逗号或其他分隔符。
+图片分析要求：
+1.  **描述 (description)**: 用中文详细描述图片内容、物品、元素和场景。描述应简洁明了。此描述文本中绝对不允许包含任何HTML标签 (如 `<p>`, `<b>` 等)。如果描述中需要使用英文双引号 (`"`)，则必须将其转义为 `\\"`.
+2.  **关键词 (keywords)**: 从图片内容中提取最多10个最具代表性的中文关键词。此字段必须是一个JSON数组，其中每个元素都是一个独立的、纯净的中文关键词字符串。例如：`["天空", "建筑", "城市"]`。单个关键词字符串内部不应包含任何引号、逗号或其他分隔符。
 
-# JSON输出格式 (严格遵守，不要添加任何额外字符、注释或Markdown标记如 \`\`\`json):
-# {
-#   "description": "图片描述文本。",
-#   "keywords": ["关键词示例1", "关键词示例2"]
-# }
+JSON输出格式 (严格遵守，不要添加任何额外字符、注释或Markdown标记如 \`\`\`json):
+{
+  "description": "图片描述文本。",
+  "keywords": ["关键词示例1", "关键词示例2"]
+}
 
-# 字数限制：整个JSON响应（包括JSON结构本身和所有文本内容）的总字数不要超过490字。"""
+字数限制：整个JSON响应（包括JSON结构本身和所有文本内容）的总字数不要超过490字。"""
+    else:
+        return {"description": "模型报错，请检查", "keywords": []}
 
     MAX_API_ATTEMPTS = 3
     last_successful_api_content_if_unparsed = None
