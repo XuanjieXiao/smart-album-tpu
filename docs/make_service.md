@@ -90,7 +90,7 @@ docker run \
     -p 18088:18088 \
     -e PLATFORM=BM1688_2CORE \
     --name smart-album-container \
-    smart_album_soc_1688_2core:latest
+    smart_album_soc_1688_2core_20:v1.0.0
 ```
 
 ## debug调试模式进入docker，方便进行问题定位
@@ -115,12 +115,12 @@ docker run \
 docker save -o smart_album_soc_1684x_1core.tar smart_album_soc_1684x_1core:latest
 docker save -o smart_album_soc_1688_1core.tar smart_album_soc_1688_1core:latest
 docker save -o smart_album_soc_1688_2core.tar smart_album_soc_1688_2core:latest
-docker save -o smart_album_soc_1688_2core_20.tar smart_album_soc_1688_2core_20:latest
+docker save -o smart_album_soc_1688_2core_20.tar smart_album_soc_1688_2core_20:v1.0.0
 ```
 
 ## 加载docker镜像：
 ```bash
 docker load < smart_album_soc_1684x_1core.tar
 docker load < smart_album_soc_1688_1core.tar
-docker load < smart_album_soc_1688_2core.tar
+docker load < smart_album_soc_1688_2core_20.tar
 ```
