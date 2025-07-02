@@ -1,4 +1,4 @@
-# Smart Album Service Deployment Guide
+# 智能相册服务部署指南
 因国内dockerhub的限制，需要换源，请使用下面方法换源：
 
 修改 /etc/docker/daemon.json（没有就新建）
@@ -17,7 +17,7 @@ sudo vim /etc/docker/daemon.json
 ```bash
 sudo systemctl restart docker
 ```
-## Building and Running the Smart Album Service for X86
+## 构建并运行 X86 智能相册服务
 通过以下命令新建X86服务器使用的BM1684X的docker的image：
 ```bash
 docker build -f packaging_file/Dockerfile_X86 -t smart_album_x86_1684x_1core:latest .
@@ -49,15 +49,19 @@ docker logs -f smart-album-container
 ```
 
 ```bash
+# 编译打包1684x的平台20.04版本
 docker build -f packaging_file/Dockerfile_SOC_1684x --build-arg PLATFORM="BM1684X" -t smart_album_soc_1684x_1core:latest . 
+# 编译打包BM1688的22.04的版本
 docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_1CORE" -t smart_album_soc_1688_1core:latest . 
 docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
+# 编译打包BM1688的20.04的版本
 docker build -f packaging_file/Dockerfile_SOC_1688_20 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
+#可以编译"BM1684X" 、 "BM1688_1CORE" "BM1688_2CORE"三种平台，为ubuntu20.04版本
 docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core_20:latest . 
 
 ```
 
-启动一个container：
+启动一个container，注意选择 **-e PLATFORM=BM1684X** 参数，保证正确的选择环境：
 ```bash
 docker run \
     --privileged \
@@ -90,7 +94,7 @@ docker run \
     smart_album_soc_1688_2core:latest
 ```
 
-## Running the Smart Album Service in Interactive Mode(debug调试模式进入docker，方便进行问题定位)
+## debug调试模式进入docker，方便进行问题定位
 ```bash
 docker run \
     --rm \
@@ -115,14 +119,9 @@ docker save -o smart_album_soc_1688_2core.tar smart_album_soc_1688_2core:latest
 docker save -o smart_album_soc_1688_2core_20.tar smart_album_soc_1688_2core_20:latest
 ```
 
-##加载docker镜像：
+## 加载docker镜像：
 ```bash
 docker load < smart_album_soc_1684x_1core.tar
 docker load < smart_album_soc_1688_1core.tar
 docker load < smart_album_soc_1688_2core.tar
-```
-
-新的打包方法：
-```bash
-./build.sh BM1688_2CORE
 ```
