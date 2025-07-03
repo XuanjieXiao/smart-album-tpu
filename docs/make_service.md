@@ -20,7 +20,7 @@ sudo systemctl restart docker
 ## 构建并运行 X86 智能相册服务
 通过以下命令新建X86服务器使用的BM1684X的docker的image：
 ```bash
-docker build -f packaging_file/Dockerfile_X86 -t smart_album_x86_1684x_1core:latest .
+docker build -f packaging_file/Dockerfile_X86 -t smart_album_x86_1684x_1core:v1.0.0 .
 ```
 启动一个container：
 ```bash
@@ -35,7 +35,7 @@ docker run \
     -v "$(pwd)/thumbnails:/app/thumbnails" \
     -p 18080:18088 \
     --name smart-album-container \
-    smart_album_x86_1684x_1core:latest
+    smart_album_x86_1684x_1core:v1.0.0
 ```
 输出启动的container的日志：
 ```bash
@@ -50,14 +50,14 @@ docker logs -f smart-album-container
 
 ```bash
 # 编译打包1684x的平台20.04版本
-docker build -f packaging_file/Dockerfile_SOC_1684x --build-arg PLATFORM="BM1684X" -t smart_album_soc_1684x_1core:latest . 
+docker build -f packaging_file/Dockerfile_SOC_1684x --build-arg PLATFORM="BM1684X" -t smart_album_soc_1684x_1core:v1.0.0 . 
 # 编译打包BM1688的22.04的版本
-docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_1CORE" -t smart_album_soc_1688_1core:latest . 
-docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:latest . 
+docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_1CORE" -t smart_album_soc_1688_1core:v1.0.0 . 
+docker build -f packaging_file/Dockerfile_SOC_1688 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core:v1.0.0 . 
 # 编译打包BM1688的20.04的版本
 docker build -f packaging_file/Dockerfile_SOC_1688_20 --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core_20:v1.0.0 . 
 #可以编译"BM1684X" 、 "BM1688_1CORE" "BM1688_2CORE"三种平台，为ubuntu20.04版本
-docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core_20:latest . 
+docker build -f packaging_file/Dockerfile_SOC --build-arg PLATFORM="BM1688_2CORE" -t smart_album_soc_1688_2core_20:v1.0.0 . 
 ```
 
 启动一个container，注意选择 **-e PLATFORM=BM1684X** 参数，保证正确的选择环境：
@@ -74,7 +74,7 @@ docker run \
     -p 18088:18088 \
     -e PLATFORM=BM1684X \
     --name smart-album-container \
-    smart_album_soc_1684x_1core:latest
+    smart_album_soc_1684x_1core:v1.0.0
 ```
 
 ```bash
@@ -105,16 +105,16 @@ docker run \
     -v "$(pwd)/thumbnails:/app/thumbnails" \
     -p 18088:18088 \
     --entrypoint bash \
-    smart_album_soc_1688_2core:latest
+    smart_album_soc_1688_2core:v1.0.0
 ```
 
 
 
 ## 保存docker镜像
 ```bash
-docker save -o smart_album_soc_1684x_1core.tar smart_album_soc_1684x_1core:latest
-docker save -o smart_album_soc_1688_1core.tar smart_album_soc_1688_1core:latest
-docker save -o smart_album_soc_1688_2core.tar smart_album_soc_1688_2core:latest
+docker save -o smart_album_soc_1684x_1core.tar smart_album_soc_1684x_1core:v1.0.0
+docker save -o smart_album_soc_1688_1core.tar smart_album_soc_1688_1core:v1.0.0
+docker save -o smart_album_soc_1688_2core.tar smart_album_soc_1688_2core:v1.0.0
 docker save -o smart_album_soc_1688_2core_20.tar smart_album_soc_1688_2core_20:v1.0.0
 ```
 
