@@ -184,7 +184,7 @@ def analyze_image_content(image_path: str):
 
     # 分支1：本地模型 - 简单、直接的单次调用
     if model_flag == "local_model":
-        prompt_text = "用中文详细描述这张图，总字数不要超过450。"
+        prompt_text = "用中文详细描述这张图，必须描述完图片里面的所有元素以及物品信息，重点描述元素的颜色、人物的穿着、车辆信息、物品信息，总字数不要超过450。"
         logging.info(f"开始本地模型图片分析 for image: {image_path}")
         try:
             response = client.chat.completions.create(
