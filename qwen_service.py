@@ -6,6 +6,7 @@ import json
 import re # 引入正则表达式库
 from PIL import Image # 用于图片处理
 import io # 用于内存中的字节流操作
+import threading # 用于线程锁
 # import html # For unescaping HTML entities if necessary
 
 # 配置日志格式和等级
@@ -22,6 +23,9 @@ logging.basicConfig(
 client = None
 QWEN_MODEL_NAME = "Qwen2.5-VL-7B-Instruct" # 默认模型名称
 model_flag = ""
+
+# 添加全局锁，确保 Qwen-VL 分析的串行化（避免并发调用导致模型错误）
+qwen_analysis_lock = threading.Lock()
 
 def init_qwen_client(api_key: str, base_url: str, model_name: str):
     """
@@ -170,45 +174,53 @@ def analyze_image_content(image_path: str):
     分析单张图片的内容，根据model_flag（local_model或online_model）采用不同策略。
     - local_model: 进行一次API调用，直接返回文本描述。
     - online_model: 进行带重试和复杂解析的API调用，期望获得JSON格式的结果。
+    
+    返回值：
+    - 成功时返回 {"description": "...", "keywords": [...], "success": True}
+    - 失败时返回 {"success": False, "error": "错误信息"}
+    
+    注意：使用全局锁确保同一时间只能有一个请求调用 Qwen-VL 模型，避免并发问题。
     """
-    if not client:
-        logging.error("Qwen-VL 客户端未初始化。无法分析图片。请在控制面板中配置API Key, Base URL和模型名称。")
-        return {"description": "Qwen服务未配置", "keywords": []}
+    # 使用全局锁确保 Qwen-VL 分析的串行化
+    with qwen_analysis_lock:
+        if not client:
+            logging.error("Qwen-VL 客户端未初始化。无法分析图片。请在控制面板中配置API Key, Base URL和模型名称。")
+            return {"success": False, "error": "Qwen服务未配置"}
 
-    logging.info(f"准备分析图片: {image_path} (模型类型: {model_flag})")
-    data_url = _prepare_image_data_for_qwen(image_path)
-    if not data_url:
-        return {"description": "", "keywords": []}
+        logging.info(f"准备分析图片: {image_path} (模型类型: {model_flag})")
+        data_url = _prepare_image_data_for_qwen(image_path)
+        if not data_url:
+            return {"success": False, "error": "图片预处理失败"}
 
-    # --- 修改核心：根据 model_flag 分支处理 ---
+        # --- 修改核心：根据 model_flag 分支处理 ---
 
-    # 分支1：本地模型 - 简单、直接的单次调用
-    if model_flag == "local_model":
-        prompt_text = "用中文详细描述这张图，必须描述完图片里面的所有元素以及物品信息，重点描述元素的颜色、人物的穿着、车辆信息、物品信息，总字数不要超过450。"
-        logging.info(f"开始本地模型图片分析 for image: {image_path}")
-        try:
-            response = client.chat.completions.create(
-                model=QWEN_MODEL_NAME,
-                messages=[
-                    {"role": "user", "content": [
-                        {"type": "text", "text": prompt_text},
-                        {"type": "image_url", "image_url": {"url": data_url}}
-                    ]}
-                ],
-                stream=False
-            )
-            # 直接获取内容，不进行JSON解析
-            # 注意：这里的响应结构是基于原代码的假设，如果您的本地模型响应不同，请调整此处
-            description = response.choices[0].message[0].content.strip()
-            logging.info(f"本地模型分析成功: {image_path}")
-            return {"description": description, "keywords": []}
-        except Exception as e:
-            logging.error(f"本地模型Qwen-VL分析图片API调用失败: {e}", exc_info=True)
-            return {"description": f"本地模型API调用失败: {e}", "keywords": []}
+        # 分支1：本地模型 - 简单、直接的单次调用
+        if model_flag == "local_model":
+            prompt_text = "用中文详细描述这张图，必须描述完图片里面的所有元素以及物品信息，重点描述元素的颜色、人物的穿着、车辆信息、物品信息，总字数不要超过450。"
+            logging.info(f"开始本地模型图片分析 for image: {image_path}")
+            try:
+                response = client.chat.completions.create(
+                    model=QWEN_MODEL_NAME,
+                    messages=[
+                        {"role": "user", "content": [
+                            {"type": "text", "text": prompt_text},
+                            {"type": "image_url", "image_url": {"url": data_url}}
+                        ]}
+                    ],
+                    stream=False
+                )
+                # 直接获取内容，不进行JSON解析
+                # 注意：这里的响应结构是基于原代码的假设，如果您的本地模型响应不同，请调整此处
+                description = response.choices[0].message[0].content.strip()
+                logging.info(f"本地模型分析成功: {image_path}")
+                return {"description": description, "keywords": [], "success": True}
+            except Exception as e:
+                logging.error(f"本地模型Qwen-VL分析图片API调用失败: {e}", exc_info=True)
+                return {"success": False, "error": f"本地模型API调用失败: {str(e)}"}
 
-    # 分支2：在线模型 - 复杂的、带重试和JSON解析的调用
-    elif model_flag == "online_model":
-        prompt_text = """请你严格作为图片分析JSON生成器运行。你的唯一输出必须是一个符合下述规范的JSON对象。
+        # 分支2：在线模型 - 复杂的、带重试和JSON解析的调用
+        elif model_flag == "online_model":
+            prompt_text = """请你严格作为图片分析JSON生成器运行。你的唯一输出必须是一个符合下述规范的JSON对象。
 
 图片分析要求：
 1.  **描述 (description)**: 用中文详细描述图片内容、物品、元素和场景。描述应简洁明了。此描述文本中绝对不允许包含任何HTML标签 (如 `<p>`, `<b>` 等)。如果描述中需要使用英文双引号 (`"`)，则必须将其转义为 `\\"`.
@@ -221,83 +233,83 @@ JSON输出格式 (严格遵守，不要添加任何额外字符、注释或Markd
 }
 
 字数限制：整个JSON响应（包括JSON结构本身和所有文本内容）的总字数不要超过490字。"""
-        
-        MAX_API_ATTEMPTS = 3
-        last_successful_api_content_if_unparsed = None
-        last_api_call_exception_details = None
+            
+            MAX_API_ATTEMPTS = 3
+            last_successful_api_content_if_unparsed = None
+            last_api_call_exception_details = None
 
-        for attempt_num in range(MAX_API_ATTEMPTS):
-            current_attempt_str = f"Attempt {attempt_num + 1}/{MAX_API_ATTEMPTS}"
-            logging.info(f"开始在线模型图片分析 - {current_attempt_str} for image: {image_path}")
-            try:
-                response = client.chat.completions.create(
-                    model=QWEN_MODEL_NAME,
-                    messages=[
-                        {"role": "user", "content": [
-                            {"type": "text", "text": prompt_text},
-                            {"type": "image_url", "image_url": {"url": data_url}}
-                        ]}
-                    ],
-                    stream=False
-                )
-                result_content = response.choices[0].message.content.strip()
-                last_successful_api_content_if_unparsed = result_content
-                last_api_call_exception_details = None
-                logging.info(f"在线模型API调用成功: {image_path} ({current_attempt_str})")
-                logging.debug(f"Qwen-VL原始输出 ({current_attempt_str}): '{result_content}'")
+            for attempt_num in range(MAX_API_ATTEMPTS):
+                current_attempt_str = f"Attempt {attempt_num + 1}/{MAX_API_ATTEMPTS}"
+                logging.info(f"开始在线模型图片分析 - {current_attempt_str} for image: {image_path}")
+                try:
+                    response = client.chat.completions.create(
+                        model=QWEN_MODEL_NAME,
+                        messages=[
+                            {"role": "user", "content": [
+                                {"type": "text", "text": prompt_text},
+                                {"type": "image_url", "image_url": {"url": data_url}}
+                            ]}
+                        ],
+                        stream=False
+                    )
+                    result_content = response.choices[0].message.content.strip()
+                    last_successful_api_content_if_unparsed = result_content
+                    last_api_call_exception_details = None
+                    logging.info(f"在线模型API调用成功: {image_path} ({current_attempt_str})")
+                    logging.debug(f"Qwen-VL原始输出 ({current_attempt_str}): '{result_content}'")
 
-                json_str_candidate = None
-                match_md = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', result_content, re.DOTALL)
-                if match_md:
-                    json_str_candidate = match_md.group(1).strip()
-                    logging.info(f"从Markdown JSON块提取候选JSON ({current_attempt_str}).")
-                else:
-                    match_curly = re.search(r'(\{[\s\S]*\})', result_content, re.DOTALL)
-                    if match_curly:
-                        json_str_candidate = match_curly.group(1).strip()
-                        logging.info(f"从裸JSON对象结构提取候选JSON ({current_attempt_str}).")
+                    json_str_candidate = None
+                    match_md = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', result_content, re.DOTALL)
+                    if match_md:
+                        json_str_candidate = match_md.group(1).strip()
+                        logging.info(f"从Markdown JSON块提取候选JSON ({current_attempt_str}).")
                     else:
-                        logging.warning(f"在API响应中未找到可识别的JSON结构 ({current_attempt_str}).")
-                
-                if json_str_candidate:
-                    try:
-                        json_str_candidate = json_str_candidate.replace('\u00a0', ' ')
-                        parsed_data = json.loads(json_str_candidate)
-                        
-                        description_raw = parsed_data.get("description", "")
-                        description = strip_html(description_raw) if isinstance(description_raw, str) else ""
+                        match_curly = re.search(r'(\{[\s\S]*\})', result_content, re.DOTALL)
+                        if match_curly:
+                            json_str_candidate = match_curly.group(1).strip()
+                            logging.info(f"从裸JSON对象结构提取候选JSON ({current_attempt_str}).")
+                        else:
+                            logging.warning(f"在API响应中未找到可识别的JSON结构 ({current_attempt_str}).")
+                    
+                    if json_str_candidate:
+                        try:
+                            json_str_candidate = json_str_candidate.replace('\u00a0', ' ')
+                            parsed_data = json.loads(json_str_candidate)
+                            
+                            description_raw = parsed_data.get("description", "")
+                            description = strip_html(description_raw) if isinstance(description_raw, str) else ""
 
-                        keywords_raw = parsed_data.get("keywords", [])
-                        keywords = clean_and_format_keywords(keywords_raw)
+                            keywords_raw = parsed_data.get("keywords", [])
+                            keywords = clean_and_format_keywords(keywords_raw)
 
-                        logging.info(f"JSON成功解析和清理 ({current_attempt_str}).")
-                        return {"description": description, "keywords": keywords}
+                            logging.info(f"JSON成功解析和清理 ({current_attempt_str}).")
+                            return {"description": description, "keywords": keywords, "success": True}
 
-                    except json.JSONDecodeError as je:
-                        logging.warning(f"JSON解析失败 ({current_attempt_str}). Error: {je}")
-                
-                if attempt_num < MAX_API_ATTEMPTS - 1:
-                    logging.info(f"当前尝试解析失败，将进行下一次API调用 ({attempt_num + 2}/{MAX_API_ATTEMPTS}).")
+                        except json.JSONDecodeError as je:
+                            logging.warning(f"JSON解析失败 ({current_attempt_str}). Error: {je}")
+                    
+                    if attempt_num < MAX_API_ATTEMPTS - 1:
+                        logging.info(f"当前尝试解析失败，将进行下一次API调用 ({attempt_num + 2}/{MAX_API_ATTEMPTS}).")
 
-            except Exception as e:
-                logging.error(f"在线模型Qwen-VL分析图片API调用失败 ({current_attempt_str}): {e}", exc_info=True)
-                last_api_call_exception_details = str(e)
-                if attempt_num < MAX_API_ATTEMPTS - 1:
-                    logging.info(f"由于API调用错误，将进行下一次尝试 ({attempt_num + 2}/{MAX_API_ATTEMPTS}).")
-        
-        # Fallback after all API attempts for online model
-        logging.error(f"所有 {MAX_API_ATTEMPTS} 次在线模型API尝试均已完成，但未能成功解析出有效JSON。")
-        if last_successful_api_content_if_unparsed:
-            logging.warning("将最后一次成功的API原始响应作为描述返回（无关键词）。")
-            return {"description": strip_html(last_successful_api_content_if_unparsed), "keywords": []}
-        elif last_api_call_exception_details:
-            logging.error(f"所有API调用均失败。最后记录的API错误: {last_api_call_exception_details}")
-            return {"description": f"API调用在所有{MAX_API_ATTEMPTS}次尝试后均失败: {last_api_call_exception_details}", "keywords": []}
+                except Exception as e:
+                    logging.error(f"在线模型Qwen-VL分析图片API调用失败 ({current_attempt_str}): {e}", exc_info=True)
+                    last_api_call_exception_details = str(e)
+                    if attempt_num < MAX_API_ATTEMPTS - 1:
+                        logging.info(f"由于API调用错误，将进行下一次尝试 ({attempt_num + 2}/{MAX_API_ATTEMPTS}).")
+            
+            # Fallback after all API attempts for online model
+            logging.error(f"所有 {MAX_API_ATTEMPTS} 次在线模型API尝试均已完成，但未能成功解析出有效JSON。")
+            if last_successful_api_content_if_unparsed:
+                logging.warning("将最后一次成功的API原始响应作为描述返回（无关键词）。")
+                return {"description": strip_html(last_successful_api_content_if_unparsed), "keywords": [], "success": True}
+            elif last_api_call_exception_details:
+                logging.error(f"所有API调用均失败。最后记录的API错误: {last_api_call_exception_details}")
+                return {"success": False, "error": f"API调用在所有{MAX_API_ATTEMPTS}次尝试后均失败: {last_api_call_exception_details}"}
+            else:
+                logging.error("所有尝试后均无有效内容或错误记录。返回通用失败信息。")
+                return {"success": False, "error": "图片分析失败，请稍后重试。"}
+
+        # 分支3：未知的模型标志
         else:
-            logging.error("所有尝试后均无有效内容或错误记录。返回通用失败信息。")
-            return {"description": "图片分析失败，请稍后重试。", "keywords": []}
-
-    # 分支3：未知的模型标志
-    else:
-        logging.error(f"未知的 model_flag: '{model_flag}'。无法确定分析策略。")
-        return {"description": f"模型标志 '{model_flag}' 配置错误，请检查。", "keywords": []}
+            logging.error(f"未知的 model_flag: '{model_flag}'。无法确定分析策略。")
+            return {"success": False, "error": f"模型标志 '{model_flag}' 配置错误，请检查。"}

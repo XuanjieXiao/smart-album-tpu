@@ -19,26 +19,20 @@
             <div class="control-group">
                 <label for="qwen-analysis-toggle-controls">Qwen-VL图片分析 (上传时自动):</label>
                 <input type="checkbox" id="qwen-analysis-toggle-controls">
-                <span id="qwen-status-text-controls">加载中...</span>
             </div>
             <div class="control-group">
                 <label for="use-enhanced-search-toggle-controls">使用增强搜索 (利用Qwen描述):</label>
                 <input type="checkbox" id="use-enhanced-search-toggle-controls">
-                <span id="use-enhanced-search-status-controls"></span> 
             </div>
         </section>
         
         <section class="control-options-section">
             <h2>Qwen-VL 服务设置</h2>
-            <p class="control-note" style="margin-bottom: 15px; font-size: 0.9em; color: #555;">这些设置将用于连接Qwen-VL模型进行图片描述和关键词提取。修改后点击下方保存按钮将立即生效。</p>
+            <p class="control-note" style="margin-bottom: 15px; font-size: 0.9em; color: #555;">这些设置将用于连接Qwen-VL模型进行图片描述和关键词提取。</p>
             <div class="control-group">
-                <label for="qwen-model-name-input">模型名称 (Model Name):</label>
+                <label for="qwen-model-name-input">模型名称:</label>
                 <input type="text" id="qwen-model-name-input" class="settings-input" placeholder="例如: Qwen2.5-VL-7B-Instruct">
             </div>
-            <!-- <div class="control-group">
-                <label for="qwen-api-key-input">API Key:</label>
-                <input type="password" id="qwen-api-key-input" class="settings-input" placeholder="输入您的 Qwen API Key">
-            </div> -->
             <div class="control-group">
                 <label for="qwen-api-key-input">API Key:</label>
                 <div class="input-with-button-container">
@@ -54,12 +48,46 @@
             </div>
         </section>
 
-        <section class="control-options-section" style="border-top: 2px solid #007bff; padding-top: 20px; background-color: transparent; border: none;">
+        <section class="control-options-section">
+            <h2>人脸识别设置</h2>
+            <p class="control-note" style="margin-bottom: 15px; font-size: 0.9em; color: #555;">配置用于人脸检测、聚类和搜索的相关参数。</p>
+            <div class="control-group">
+                <label for="face-recognition-toggle-controls">人脸识别功能 (上传时自动):</label>
+                <input type="checkbox" id="face-recognition-toggle-controls">
+            </div>
+            <div class="control-group">
+                <label for="face-api-url-input">人脸服务 URL:</label>
+                <input type="text" id="face-api-url-input" class="settings-input" placeholder="例如: http://127.0.0.1:8000">
+            </div>
+            <div class="control-group">
+                <label for="face-cluster-threshold-input">人脸聚类相似度阈值:</label>
+                <input type="number" id="face-cluster-threshold-input" class="settings-input" step="0.01" min="0" max="1" placeholder="例如: 0.5 (0到1之间的值)">
+            </div>
+        </section>
+        <section class="control-options-section" style="border: none; background: none; padding-left: 0; padding-right: 0;">
              <div class="control-group">
                 <button id="save-all-settings-button" class="action-button primary-action"><i class="fas fa-save"></i> 保存所有设置</button>
                 <span id="save-settings-status" class="status-message" style="margin-left: 10px;"></span>
             </div>
         </section>
+
+        <section class="control-options-section">
+            <h2>批量增强分析</h2>
+            <p class="control-note" style="margin-bottom: 15px; font-size: 0.9em; color: #555;">对图库中所有未增强分析的照片进行Qwen-VL批量增强分析。</p>
+            <div class="control-group">
+                <button id="batch-enhance-button" class="action-button primary-action">
+                    <i class="fas fa-magic"></i> 一键增强分析
+                </button>
+                <div id="batch-enhance-status" class="status-message" style="margin-top: 10px;"></div>
+                <div id="batch-enhance-progress" class="progress-container" style="display: none; margin-top: 10px;">
+                    <div class="progress-bar">
+                        <div id="batch-enhance-progress-bar" class="progress-fill"></div>
+                    </div>
+                    <div id="batch-enhance-progress-text" class="progress-text">0 / 0</div>
+                </div>
+            </div>
+        </section>
+
         <section class="upload-section-controls">
             <h2>上传图片</h2>
             <div class="control-group upload-control-group-controls">

@@ -13,6 +13,8 @@ import tempfile # Added for temporary file handling
 import argparse
 import cv2
 import sys
+import threading
+import time
 
 def get_base_path():
     """
@@ -51,6 +53,13 @@ import qwen_service
 import database_utils as db
 import faiss_utils as fu
 
+# --- 新增/修改开始 ---
+# 导入新增的人脸服务模块
+import face_service
+import faiss_face_utils as ffu_face # 使用别名以区分
+# --- 新增/修改结束 ---
+
+
 # --- Flask 应用初始化 ---
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app) # Allow all origins by default
@@ -73,16 +82,40 @@ os.makedirs(CLIP_MODEL_DOWNLOAD_ROOT, exist_ok=True)
 clip_model = None
 clip_preprocess = None
 
+# --- 批量增强分析状态管理 ---
+batch_enhance_status = {
+    "is_running": False,
+    "is_stopped": False,
+    "total_images": 0,
+    "processed_count": 0,
+    "current_image_id": None,
+    "current_image_filename": None,
+    "start_time": None,
+    "errors": [],
+    "last_error": None
+}
+batch_enhance_thread = None
+batch_enhance_lock = threading.Lock()
+
 
 # --- 应用配置 (可持久化或从配置文件加载) ---
 APP_CONFIG_FILE = os.path.join(CURRENT_DIR, "data", "app_config.json")
+
+# --- 新增/修改开始 ---
+# 在默认配置中加入人脸相关设置
 default_app_config = {
     "qwen_vl_analysis_enabled": True,
     "use_enhanced_search": True,
     "qwen_model_name": "Qwen2.5-VL-7B-Instruct",
-    "qwen_api_key": "HoUbVVd_L1Z0uLJJiq5ND13yfDreU4pkTHwoTbU_EMp31G_OLx_ONh5fIoa37cNM4mRfAvst7bR_9VUfi4-QXg",
-    "qwen_base_url": "https://www.sophnet.com/api/open-apis/v1"
+    "qwen_api_key": "YOUR_QWEN_API_KEY", # 请替换为您的有效Key
+    "qwen_base_url": "https://www.sophnet.com/api/open-apis/v1",
+    # 人脸识别相关配置
+    "face_recognition_enabled": True, # 是否在上传时自动识别人脸
+    "face_api_url": "http://127.0.0.1:8000", # 您的人脸识别服务地址
+    "face_cluster_threshold": 0.5, # 人脸聚类相似度阈值 (内积)，需要根据模型效果微调
 }
+# --- 新增/修改结束 ---
+
 app_config = {}
 
 def load_app_config():
@@ -91,6 +124,7 @@ def load_app_config():
         try:
             with open(APP_CONFIG_FILE, 'r', encoding='utf-8') as f:
                 app_config = json.load(f)
+            # 确保所有默认键都存在
             for key, value in default_app_config.items():
                 app_config.setdefault(key, value) 
             logging.info(f"应用配置已从 {APP_CONFIG_FILE} 加载。")
@@ -243,21 +277,84 @@ def process_single_image_upload(file_storage):
                 logging.info(f"图片 '{original_filename}' (DB ID: {image_db_id}, FAISS ID: {actual_faiss_id}) 处理完成并入库。")
                 
                 if app_config.get("qwen_vl_analysis_enabled", True):
-                    logging.info(f"全局Qwen-VL分析已开启，开始分析图片 ID: {image_db_id}")
+                    logging.info(f"全局Qwen-VL分析已开启，开始分析图片 ID: {image_db_id} (文件名: {original_filename})")
                     qwen_result = qwen_service.analyze_image_content(original_path_abs) # Use absolute path for analysis
-                    if qwen_result and (qwen_result.get("description") or qwen_result.get("keywords")):
+                    
+                    # 检查分析是否成功
+                    if qwen_result and qwen_result.get("success") and (qwen_result.get("description") or qwen_result.get("keywords")):
                         db.update_image_enhancement(image_db_id, qwen_result["description"], qwen_result["keywords"])
                         
                         bce_desc_emb = bce_service.get_bce_embedding(qwen_result["description"]) 
                         if bce_desc_emb is not None and bce_desc_emb.shape[0] == fu.BCE_EMBEDDING_DIM:
                             updated_concatenated_emb = np.concatenate((clip_img_emb, bce_desc_emb))
                             fu.update_vector_in_index(updated_concatenated_emb, actual_faiss_id) 
-                            logging.info(f"图片 ID: {image_db_id} Qwen-VL分析完成并更新了FAISS向量。")
+                            logging.info(f"图片 ID: {image_db_id} ({original_filename}) Qwen-VL分析完成并更新了FAISS向量。")
                         else:
-                            logging.warning(f"图片 ID: {image_db_id} Qwen-VL分析的BCE embedding生成失败或维度不符。FAISS向量未更新BCE部分。")
+                            logging.warning(f"图片 ID: {image_db_id} ({original_filename}) Qwen-VL分析的BCE embedding生成失败或维度不符。FAISS向量未更新BCE部分。")
                     else:
-                        logging.warning(f"图片 ID: {image_db_id} Qwen-VL分析未返回有效结果。")
+                        # 分析失败，图片保持未增强状态，等待后续手动触发
+                        error_msg = qwen_result.get("error", "未知错误") if qwen_result else "返回结果为空"
+                        logging.warning(f"图片 ID: {image_db_id} ({original_filename}) Qwen-VL分析失败: {error_msg}。图片保持未增强状态，可稍后手动增强。")
                 
+                # --- 新增/修改开始 ---
+                # 在图片处理成功后，调用人脸识别流程
+                if app_config.get("face_recognition_enabled", True):
+                    logging.info(f"开始对图片 ID: {image_db_id} 进行人脸识别...")
+                    # 使用绝对路径调用服务
+                    detected_faces = face_service.detect_faces(original_path_abs) 
+                    
+                    if detected_faces:
+                        logging.info(f"在图片 ID: {image_db_id} 中检测到 {len(detected_faces)} 张人脸")
+                        cluster_threshold = app_config.get("face_cluster_threshold", 0.5)
+                        for i, face in enumerate(detected_faces):
+                            feature_vec = face["FeatureData"]
+                            logging.debug(f"处理第 {i+1} 张人脸，特征向量维度: {feature_vec.shape}")
+                            
+                            # 在人脸FAISS中搜索最相似的人脸
+                            sims, face_ids = ffu_face.search_vectors_in_index(feature_vec, top_k=1)
+                            
+                            cluster_id = None
+                            # 如果找到了相似人脸且相似度超过阈值
+                            if face_ids and sims and sims[0] > cluster_threshold:
+                                matched_face_id = face_ids[0]
+                                cluster_id = db.get_cluster_id_by_face_id(matched_face_id)
+                                if cluster_id:
+                                    logging.info(f"找到匹配人脸 (face_id:{matched_face_id}, sim:{sims[0]:.4f})，归入聚类 {cluster_id}")
+                                else:
+                                    logging.warning(f"数据不一致: 找到匹配人脸 face_id:{matched_face_id} 但未找到其聚类。")
+                            else:
+                                logging.info(f"未找到相似人脸 (阈值: {cluster_threshold})，将创建新聚类")
+
+                            # 如果未找到匹配或没有聚类ID，则创建新聚类
+                            if not cluster_id:
+                                cluster_id = db.create_new_face_cluster()
+                                logging.info(f"创建了新的人脸聚类 ID: {cluster_id}")
+
+                            attributes_to_collect = ["Age", "Gender", "Glasses", "HeadPose", "Mask"]
+                            attributes_dict = {key: face.get(key) for key in attributes_to_collect if face.get(key) is not None}
+                            
+
+                            # 将检测到的人脸信息存入数据库
+                            new_face_id = db.add_detected_face(
+                                image_id=image_db_id,
+                                cluster_id=cluster_id,
+                                face_box=face.get("FaceBox", []),
+                                attributes=attributes_dict, # 使用新构建的字典
+                                score=face.get("Score", 0.0)
+                            )
+
+                            if new_face_id:
+                                logging.info(f"将人脸 ID: {new_face_id} 添加到人脸FAISS索引")
+                                # 将新的人脸特征向量添加到人脸FAISS索引中，使用数据库的face_id作为其唯一标识
+                                ffu_face.add_vector_to_index(feature_vec, new_face_id)
+                        
+                        # 批量处理完后保存一次人脸FAISS索引
+                        ffu_face.save_faiss_index()
+                        logging.info(f"已保存人脸FAISS索引，当前索引大小: {ffu_face.get_face_index_status()}")
+                    else:
+                        logging.info(f"图片 ID: {image_db_id} 中未检测到人脸")
+                # --- 新增/修改结束 ---
+
                 return {
                     "id": image_db_id, 
                     "faiss_id": actual_faiss_id, 
@@ -285,10 +382,162 @@ def process_single_image_upload(file_storage):
                 except Exception as fe: logging.error(f"处理错误后FAISS回滚失败: {fe}")
             db.hard_delete_image_from_db(image_db_id) 
         
-        # Cleanup on exception
         if os.path.exists(original_path_abs): os.remove(original_path_abs)
         if thumbnail_path_abs and os.path.exists(thumbnail_path_abs): os.remove(thumbnail_path_abs)
         return None
+
+def batch_enhance_worker():
+    """批量增强分析的工作线程函数"""
+    global batch_enhance_status
+    
+    with batch_enhance_lock:
+        if batch_enhance_status["is_running"]:
+            logging.warning("批量增强分析已在运行中，跳过重复启动。")
+            return
+            
+        batch_enhance_status.update({
+            "is_running": True,
+            "is_stopped": False,
+            "processed_count": 0,
+            "current_image_id": None,
+            "current_image_filename": None,
+            "start_time": time.time(),
+            "errors": [],
+            "last_error": None
+        })
+    
+    try:
+        logging.info("开始批量增强分析...")
+        
+        # 获取未增强的图片列表
+        unenhanced_images = db.get_images_for_enhancement(limit=10000)  # 设置一个较大的限制
+        
+        with batch_enhance_lock:
+            batch_enhance_status["total_images"] = len(unenhanced_images)
+        
+        if not unenhanced_images:
+            logging.info("没有未增强的图片需要处理。")
+            with batch_enhance_lock:
+                batch_enhance_status["is_running"] = False
+            return
+        
+        logging.info(f"找到 {len(unenhanced_images)} 张未增强的图片，开始处理...")
+        
+        for image_record in unenhanced_images:
+            # 检查是否被停止
+            with batch_enhance_lock:
+                if batch_enhance_status["is_stopped"]:
+                    logging.info("批量增强分析被用户停止。")
+                    break
+                    
+                # 更新当前处理状态
+                batch_enhance_status["current_image_id"] = image_record["id"]
+                # 从original_path中提取文件名
+                original_path = image_record["original_path"]
+                batch_enhance_status["current_image_filename"] = os.path.basename(original_path) if original_path else f"ID_{image_record['id']}"
+            
+            # 执行增强分析
+            try:
+                # 构建绝对路径
+                absolute_original_path = os.path.join(CURRENT_DIR, image_record["original_path"])
+                
+                if not os.path.exists(absolute_original_path):
+                    error_msg = f"图片文件不存在: {absolute_original_path}"
+                    logging.warning(error_msg)
+                    with batch_enhance_lock:
+                        batch_enhance_status["errors"].append({
+                            "image_id": image_record["id"], 
+                            "error": error_msg
+                        })
+                        batch_enhance_status["last_error"] = error_msg
+                    continue
+                
+                logging.info(f"正在处理图片 ID: {image_record['id']} - {batch_enhance_status['current_image_filename']}")
+                
+                # 调用Qwen-VL分析
+                qwen_result = qwen_service.analyze_image_content(absolute_original_path)
+                
+                if qwen_result and qwen_result.get("success") and (qwen_result.get("description") or qwen_result.get("keywords")):
+                    # 更新数据库
+                    update_success = db.update_image_enhancement(
+                        image_record["id"], 
+                        qwen_result["description"], 
+                        qwen_result["keywords"]
+                    )
+                    
+                    if update_success:
+                        # 获取CLIP embedding并更新FAISS
+                        clip_img_emb = db.get_clip_embedding_for_image(image_record["id"])
+                        if clip_img_emb is not None:
+                            bce_desc_emb = bce_service.get_bce_embedding(qwen_result["description"])
+                            if bce_desc_emb is not None and bce_desc_emb.shape[0] == fu.BCE_EMBEDDING_DIM:
+                                updated_concatenated_emb = np.concatenate((clip_img_emb, bce_desc_emb))
+                            else:
+                                zeros_bce_emb = np.zeros(fu.BCE_EMBEDDING_DIM, dtype=np.float32)
+                                updated_concatenated_emb = np.concatenate((clip_img_emb, zeros_bce_emb))
+                            
+                            # 更新FAISS向量
+                            faiss_id = image_record["faiss_id"] if image_record["faiss_id"] else image_record["id"]
+                            fu.update_vector_in_index(updated_concatenated_emb, faiss_id)
+                        
+                        logging.info(f"图片 ID: {image_record['id']} 增强分析完成。")
+                    else:
+                        error_msg = f"图片 ID: {image_record['id']} 数据库更新失败"
+                        logging.error(error_msg)
+                        with batch_enhance_lock:
+                            batch_enhance_status["errors"].append({
+                                "image_id": image_record["id"], 
+                                "error": error_msg
+                            })
+                            batch_enhance_status["last_error"] = error_msg
+                else:
+                    # 分析失败
+                    error_msg = qwen_result.get("error", "Qwen-VL分析失败") if qwen_result else "分析结果为空"
+                    logging.warning(f"图片 ID: {image_record['id']} 增强分析失败: {error_msg}")
+                    with batch_enhance_lock:
+                        batch_enhance_status["errors"].append({
+                            "image_id": image_record["id"], 
+                            "error": error_msg
+                        })
+                        batch_enhance_status["last_error"] = error_msg
+                
+            except Exception as e:
+                error_msg = f"处理图片 ID: {image_record['id']} 时发生异常: {str(e)}"
+                logging.error(error_msg, exc_info=True)
+                with batch_enhance_lock:
+                    batch_enhance_status["errors"].append({
+                        "image_id": image_record["id"], 
+                        "error": error_msg
+                    })
+                    batch_enhance_status["last_error"] = error_msg
+            
+            # 更新处理计数
+            with batch_enhance_lock:
+                batch_enhance_status["processed_count"] += 1
+            
+            # 添加小延迟避免过度占用资源
+            time.sleep(0.1)
+        
+        # 保存FAISS索引
+        try:
+            fu.save_faiss_index()
+            logging.info("批量增强分析完成，FAISS索引已保存。")
+        except Exception as e:
+            logging.error(f"保存FAISS索引失败: {e}")
+        
+    except Exception as e:
+        error_msg = f"批量增强分析过程中发生严重错误: {str(e)}"
+        logging.error(error_msg, exc_info=True)
+        with batch_enhance_lock:
+            batch_enhance_status["last_error"] = error_msg
+    
+    finally:
+        with batch_enhance_lock:
+            batch_enhance_status["is_running"] = False
+            batch_enhance_status["current_image_id"] = None
+            batch_enhance_status["current_image_filename"] = None
+        
+        logging.info("批量增强分析线程结束。")
 
 # --- API 路由 ---
 @app.route('/')
@@ -583,7 +832,7 @@ def handle_app_settings():
             logging.info(f"使用增强搜索状态已更新为: {app_config['use_enhanced_search']}")
             updated_any = True
         
-        # --- 修改开始：处理新的Qwen配置项 ---
+        # 处理Qwen配置项
         if 'qwen_model_name' in data and isinstance(data['qwen_model_name'], str):
             app_config['qwen_model_name'] = data['qwen_model_name'].strip()
             logging.info(f"Qwen 模型名称已更新为: {app_config['qwen_model_name']}")
@@ -598,17 +847,35 @@ def handle_app_settings():
             app_config['qwen_base_url'] = data['qwen_base_url'].strip()
             logging.info(f"Qwen Base URL 已更新为: {app_config['qwen_base_url']}")
             updated_any = True
-        # --- 修改结束 ---
+
+        # --- 新增/修改开始 ---
+        # 处理人脸识别相关配置
+        if 'face_recognition_enabled' in data and isinstance(data['face_recognition_enabled'], bool):
+            app_config['face_recognition_enabled'] = data['face_recognition_enabled']
+            logging.info(f"人脸自动识别状态已更新为: {app_config['face_recognition_enabled']}")
+            updated_any = True
+
+        if 'face_api_url' in data and isinstance(data['face_api_url'], str) and data['face_api_url']:
+            app_config['face_api_url'] = data['face_api_url'].strip()
+            logging.info(f"人脸识别服务URL已更新为: {app_config['face_api_url']}")
+            # 更新face_service客户端
+            face_service.init_face_client(app_config['face_api_url'])
+            updated_any = True
+
+        if 'face_cluster_threshold' in data and isinstance(data['face_cluster_threshold'], (int, float)):
+            app_config['face_cluster_threshold'] = data['face_cluster_threshold']
+            logging.info(f"人脸聚类阈值已更新为: {app_config['face_cluster_threshold']}")
+            updated_any = True
+        # --- 新增/修改结束 ---
 
         if updated_any:
             save_app_config()
-            # --- 修改开始：使用新配置重新初始化Qwen客户端 ---
+            # 如果Qwen配置有变，重新初始化客户端
             qwen_service.init_qwen_client(
                 api_key=app_config.get('qwen_api_key'),
                 base_url=app_config.get('qwen_base_url'),
                 model_name=app_config.get('qwen_model_name')
             )
-            # --- 修改结束 ---
             return jsonify({"message": "应用设置已更新。", "settings": app_config}), 200
         else:
             return jsonify({"message": "未提供有效设置进行更新。", "settings": app_config}), 200
@@ -645,7 +912,8 @@ def enhance_single_image_api(image_db_id):
     logging.info(f"手动触发对图片 ID: {image_db_id} ({absolute_original_path}) 的Qwen-VL分析。")
     qwen_result = qwen_service.analyze_image_content(absolute_original_path) # Use absolute path
 
-    if qwen_result and (qwen_result.get("description") or qwen_result.get("keywords")):
+    # 检查分析是否成功
+    if qwen_result and qwen_result.get("success") and (qwen_result.get("description") or qwen_result.get("keywords")):
         update_success = db.update_image_enhancement(image_db_id, qwen_result["description"], qwen_result["keywords"])
         if not update_success:
              return jsonify({"error": f"图片 ID {image_db_id} 分析结果存入数据库失败。"}), 500
@@ -681,8 +949,92 @@ def enhance_single_image_api(image_db_id):
                 "is_enhanced": True 
                 }), 500
     else: 
-        logging.warning(f"图片 ID: {image_db_id} 手动Qwen-VL分析未返回有效结果。")
-        return jsonify({"error": f"图片 ID {image_db_id} 分析未产生有效结果。"}), 500
+        # 分析失败，返回错误信息
+        error_msg = qwen_result.get("error", "未知错误") if qwen_result else "返回结果为空"
+        logging.warning(f"图片 ID: {image_db_id} 手动Qwen-VL分析失败: {error_msg}")
+        return jsonify({"error": f"图片 ID {image_db_id} 分析失败: {error_msg}"}), 500
+
+@app.route('/batch_enhance/status', methods=['GET'])
+def get_batch_enhance_status_api():
+    """获取批量增强分析状态"""
+    global batch_enhance_status
+    with batch_enhance_lock:
+        # 复制状态数据以避免并发修改
+        status_copy = batch_enhance_status.copy()
+        
+        # 转换时间戳为可读格式
+        if status_copy.get("start_time"):
+            import time
+            elapsed_time = time.time() - status_copy["start_time"]
+            status_copy["elapsed_time"] = round(elapsed_time, 2)
+        
+        return jsonify(status_copy), 200
+
+@app.route('/batch_enhance/start', methods=['POST'])
+def start_batch_enhance_api():
+    """启动批量增强分析"""
+    global batch_enhance_thread
+    
+    with batch_enhance_lock:
+        if batch_enhance_status["is_running"]:
+            return jsonify({
+                "success": False, 
+                "error": "批量增强分析已在运行中"
+            }), 400
+            
+        # 检查Qwen-VL服务是否可用
+        if not qwen_service.client:
+            return jsonify({
+                "success": False,
+                "error": "Qwen-VL服务未配置，请先在控制面板中配置API Key、Base URL和模型名称"
+            }), 503
+            
+        # 检查是否有未增强的图片
+        unenhanced_count = len(db.get_images_for_enhancement(limit=1))
+        if unenhanced_count == 0:
+            return jsonify({
+                "success": False,
+                "error": "当前没有需要增强分析的图片"
+            }), 400
+    
+    try:
+        # 启动批量增强分析线程
+        batch_enhance_thread = threading.Thread(target=batch_enhance_worker, daemon=True)
+        batch_enhance_thread.start()
+        
+        logging.info("批量增强分析线程已启动")
+        return jsonify({
+            "success": True,
+            "message": "批量增强分析已启动"
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"启动批量增强分析失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"启动失败: {str(e)}"
+        }), 500
+
+@app.route('/batch_enhance/stop', methods=['POST'])
+def stop_batch_enhance_api():
+    """停止批量增强分析"""
+    global batch_enhance_status
+    
+    with batch_enhance_lock:
+        if not batch_enhance_status["is_running"]:
+            return jsonify({
+                "success": False,
+                "error": "当前没有正在运行的批量增强分析"
+            }), 400
+            
+        # 设置停止标志
+        batch_enhance_status["is_stopped"] = True
+        
+        logging.info("用户请求停止批量增强分析")
+        return jsonify({
+            "success": True,
+            "message": "正在停止批量增强分析..."
+        }), 200
 
 @app.route('/images', methods=['GET'])
 def get_images_list_api():
@@ -729,6 +1081,8 @@ def delete_images_batch_api():
     if not image_ids_to_delete:
         return jsonify({"error": "未提供要删除的图片ID。"}), 400
 
+    face_ids_to_remove_from_faiss = db.get_face_ids_by_image_ids(image_ids_to_delete)
+
     deleted_count = 0
     failed_ids = []
     faiss_ids_to_remove_from_index = []
@@ -758,6 +1112,7 @@ def delete_images_batch_api():
             if faiss_id is not None:
                 faiss_ids_to_remove_from_index.append(faiss_id)
             
+            # 数据库的外键已设置为 ON DELETE CASCADE,
             if db.hard_delete_image_from_db(image_id_int):
                 deleted_count += 1
             else:
@@ -783,7 +1138,11 @@ def delete_images_batch_api():
                 logging.error(f"从FAISS索引移除向量时出错: {e_faiss_remove}")
         else:
             logging.warning("FAISS索引为空或未初始化，跳过FAISS删除。")
-
+            
+    # 从人脸FAISS索引中删除对应向量
+    if face_ids_to_remove_from_faiss:
+        logging.info(f"准备从人脸FAISS中删除ID列表: {face_ids_to_remove_from_faiss}")
+        ffu_face.remove_vectors_from_index(face_ids_to_remove_from_faiss)
 
     if deleted_count > 0:
         return jsonify({
@@ -844,7 +1203,80 @@ def add_user_tags_batch_api():
         }), 500
 
 
-# --- 静态文件服务 ---
+# 新增人脸相关 API 路由
+@app.route('/faces/search_by_face', methods=['POST'])
+def search_images_by_face_api():
+    """
+    图搜人脸：上传一张带有人脸的图片，返回包含该人脸的所有相册图片。
+    """
+    if 'face_query_file' not in request.files:
+        return jsonify({"error": "请求中未找到人脸查询文件(face_query_file key missing)"}), 400
+    
+    query_file = request.files['face_query_file']
+    if not query_file or query_file.filename == '':
+        return jsonify({"error": "未选择人脸查询文件"}), 400
+
+    logging.info(f"开始通过人脸图片 '{query_file.filename}' 进行搜索...")
+
+    # 使用临时文件处理上传的图片
+    try:
+        with tempfile.NamedTemporaryFile(delete=True, suffix=os.path.splitext(query_file.filename)[1]) as tmp_file:
+            query_file.save(tmp_file.name)
+            # 对查询图片进行人脸检测
+            detected_faces = face_service.detect_faces(tmp_file.name)
+    except Exception as e:
+        logging.error(f"处理人脸查询图片时出错: {e}", exc_info=True)
+        return jsonify({"error": "处理查询图片失败。"}), 500
+
+    if not detected_faces:
+        return jsonify({"error": "在您上传的图片中未能检测到人脸，或服务出错。"}), 400
+    
+    # 默认使用检测到的第一张、质量最高的人脸进行搜索
+    query_face = max(detected_faces, key=lambda x: x.get('Score', 0))
+    query_feature_vec = query_face["FeatureData"]
+    
+    # 在FAISS中搜索最相似的人脸，以确定其聚类ID
+    sims, face_ids = ffu_face.search_vectors_in_index(query_feature_vec, top_k=1)
+    
+    if not face_ids:
+        return jsonify({"message": "未在图库中找到任何相似的人脸。", "results": []}), 200
+        
+    # 根据最匹配的人脸ID找到其所属的聚类ID
+    target_cluster_id = db.get_cluster_id_by_face_id(face_ids[0])
+    if not target_cluster_id:
+        return jsonify({"error": "数据不一致：找到了匹配的人脸但无法找到其聚类信息。"}), 500
+
+    # 根据聚类ID，分页获取所有包含该人脸的图片信息
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 50, type=int)
+    
+    # 注意：您需要在 database_utils.py 中实现 get_images_by_cluster_id 函数
+    images_data, total_count = db.get_images_by_cluster_id(target_cluster_id, page, limit)
+    
+    results = []
+    for img_row in images_data:
+        thumbnail_url = f"/thumbnails/{os.path.basename(img_row['thumbnail_path'])}" if img_row['thumbnail_path'] and os.path.exists(os.path.join(CURRENT_DIR, img_row['thumbnail_path'])) else None
+        original_url = f"/uploads/{os.path.basename(img_row['original_path'])}" if img_row['original_path'] and os.path.exists(os.path.join(CURRENT_DIR, img_row['original_path'])) else None
+        results.append({
+            "id": img_row["id"],
+            "filename": img_row["original_filename"],
+            "thumbnail_url": thumbnail_url,
+            "original_url": original_url,
+        })
+
+    return jsonify({
+        "message": f"找到了属于聚类 {target_cluster_id} 的 {total_count} 张图片。",
+        "cluster_id": target_cluster_id,
+        "results": results,
+        "page": page,
+        "limit": limit,
+        "total_count": total_count,
+        "total_pages": (total_count + limit - 1) // limit if limit > 0 else 0
+    }), 200
+
+# --- 新增/修改结束 ---
+
+
 @app.route('/uploads/<path:filename>')
 def serve_upload(filename):
     if ".." in filename or filename.startswith("/"):
@@ -856,6 +1288,130 @@ def serve_thumbnail(filename):
     if ".." in filename or filename.startswith("/"):
         return jsonify({"error": "非法路径"}), 400
     return send_from_directory(THUMBNAILS_DIR, filename)
+
+
+# --- 新增API路由 ---
+@app.route('/faces/clusters', methods=['GET'])
+def get_face_clusters():
+    """
+    获取所有人脸聚类信息列表。
+    注意: 需要在 database_utils.py 中实现 get_all_face_clusters 函数。
+    """
+    try:
+        # 这个DB函数需要返回一个列表，每个元素包含 cluster_id, name, face_count, 和 cover_thumbnail_path
+        clusters_data = db.get_all_face_clusters() 
+        results = []
+        for cluster in clusters_data:
+            thumbnail_url = None
+            if cluster.get('cover_thumbnail_path'):
+                thumbnail_url = f"/thumbnails/{os.path.basename(cluster['cover_thumbnail_path'])}"
+            results.append({
+                "cluster_id": cluster['cluster_id'],
+                "name": cluster.get('name'), # .get()确保即使name为None也不会报错
+                "face_count": cluster.get('face_count', 0),
+                "cover_thumbnail_url": thumbnail_url
+            })
+        return jsonify({"clusters": results}), 200
+    except Exception as e:
+        logging.error(f"获取人脸聚类时出错: {e}", exc_info=True)
+        return jsonify({"error": "获取人脸聚类信息失败。"}), 500
+
+@app.route('/faces/clusters/<int:cluster_id>', methods=['PUT'])
+def update_face_cluster_name(cluster_id):
+    """
+    更新一个人脸聚类的名称。
+    注意: 需要在 database_utils.py 中实现 update_face_cluster_name 函数。
+    """
+    data = request.get_json()
+    if not data or 'name' not in data:
+        return jsonify({"error": "请求体中缺少 'name' 字段。"}), 400
+    
+    new_name = data['name'].strip()
+    if not new_name:
+        return jsonify({"error": "'name' 字段不能为空。"}), 400
+
+    try:
+        if db.update_face_cluster_name(cluster_id, new_name):
+            return jsonify({"message": f"聚类 {cluster_id} 名称已更新为 '{new_name}'。"}), 200
+        else:
+            return jsonify({"error": f"未能找到或更新聚类ID {cluster_id}。"}), 404
+    except Exception as e:
+        logging.error(f"更新聚类名称时出错: {e}", exc_info=True)
+        return jsonify({"error": "更新聚类名称失败。"}), 500
+
+@app.route('/faces/clusters/<int:cluster_id>/images', methods=['GET'])
+def get_images_for_cluster(cluster_id):
+    """
+    分页获取指定人脸聚类下的所有图片。
+    注意: get_images_by_cluster_id 函数已在之前添加。
+    """
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 50, type=int)
+    try:
+        images_data, total_count = db.get_images_by_cluster_id(cluster_id, page, limit)
+        results = []
+        for img_row in images_data:
+            thumbnail_url = f"/thumbnails/{os.path.basename(img_row['thumbnail_path'])}" if img_row['thumbnail_path'] and os.path.exists(os.path.join(CURRENT_DIR, img_row['thumbnail_path'])) else None
+            original_url = f"/uploads/{os.path.basename(img_row['original_path'])}" if img_row['original_path'] and os.path.exists(os.path.join(CURRENT_DIR, img_row['original_path'])) else None
+            results.append({
+                "id": img_row["id"],
+                "filename": img_row["original_filename"],
+                "thumbnail_url": thumbnail_url,
+                "original_url": original_url,
+            })
+        return jsonify({
+            "message": f"找到了属于聚类 {cluster_id} 的 {total_count} 张图片。",
+            "cluster_id": cluster_id,
+            "results": results,
+            "page": page,
+            "limit": limit,
+            "total_count": total_count,
+            "total_pages": (total_count + limit - 1) // limit if limit > 0 else 0
+        }), 200
+    except Exception as e:
+        logging.error(f"获取聚类图片时出错: {e}", exc_info=True)
+        return jsonify({"error": "获取聚类图片失败。"}), 500
+
+@app.route('/faces/search', methods=['GET'])
+def search_faces_by_name():
+    """
+    通过人名搜索图片。
+    注意: 需要在 database_utils.py 中实现 get_images_by_cluster_name 函数。
+    """
+    name_query = request.args.get('name', '').strip()
+    if not name_query:
+        return jsonify({"error": "需要提供 'name' 查询参数。"}), 400
+    
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 50, type=int)
+
+    try:
+        # 这个DB函数需要能处理模糊匹配并返回分页的图片列表和总数
+        images_data, total_count = db.get_images_by_cluster_name(name_query, page, limit)
+        results = []
+        for img_row in images_data:
+            thumbnail_url = f"/thumbnails/{os.path.basename(img_row['thumbnail_path'])}" if img_row['thumbnail_path'] and os.path.exists(os.path.join(CURRENT_DIR, img_row['thumbnail_path'])) else None
+            original_url = f"/uploads/{os.path.basename(img_row['original_path'])}" if img_row['original_path'] and os.path.exists(os.path.join(CURRENT_DIR, img_row['original_path'])) else None
+            results.append({
+                "id": img_row["id"],
+                "filename": img_row["original_filename"],
+                "thumbnail_url": thumbnail_url,
+                "original_url": original_url,
+            })
+        return jsonify({
+            "message": f"为 '{name_query}' 找到了 {total_count} 张图片。",
+            "query": name_query,
+            "results": results,
+            "page": page,
+            "limit": limit,
+            "total_count": total_count,
+            "total_pages": (total_count + limit - 1) // limit if limit > 0 else 0
+        }), 200
+    except Exception as e:
+        logging.error(f"按名称搜索人脸时出错: {e}", exc_info=True)
+        return jsonify({"error": "按名称搜索人脸失败。"}), 500
+
+# --- 新增API路由结束 ---
 
 
 def argsparser():
@@ -897,6 +1453,12 @@ if __name__ == '__main__':
     load_app_config()
     db.init_db() 
     fu.init_faiss_index() 
+
+    # --- 新增/修改开始 ---
+    # 初始化人脸服务和人脸FAISS索引
+    ffu_face.init_faiss_index()
+    face_service.init_face_client(app_config.get('face_api_url'))
+    # --- 新增/修改结束 ---
 
     qwen_service.init_qwen_client(
         api_key=app_config.get('qwen_api_key'),

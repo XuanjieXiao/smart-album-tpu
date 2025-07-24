@@ -10,7 +10,7 @@
 <body>
     <nav class="top-nav">
         <div class="nav-container">
-            <a href="{{ url_for('index') }}" class="nav-brand">
+            <a href="#" id="nav-brand-link" class="nav-brand">
                 <img src="{{ url_for('static', filename='images/logo.png') }}" alt="公司Logo" class="nav-logo">
                 智能相册
             </a>
@@ -20,6 +20,9 @@
                 </button>
                 <button id="batch-tag-button" class="nav-button action-button" title="给选中的图片添加标签" style="display: none;">
                     <i class="fas fa-tags"></i> 标记选中
+                </button>
+                <button id="nav-face-view-button" class="nav-icon-button" title="人脸视图">
+                    <i class="fas fa-user-circle"></i>
                 </button>
                 <button id="nav-upload-button" class="nav-icon-button" title="上传图片到图库">
                     <i class="fas fa-upload"></i>
@@ -33,31 +36,63 @@
     <input type="file" id="unified-upload-input-hidden" multiple accept="image/*" style="display: none;">
 
     <div class="main-page-container">
-        <section class="hero-section">
-            <h1 class="hero-title">智能相册：文搜图、图搜图赋能未来</h1>
-            <div class="search-container-hero">
-                <input type="file" id="image-search-input-hero" accept="image/*" style="display: none;">
-                <button id="image-search-upload-button-hero" class="search-image-upload-button" title="上传图片以图搜图">
-                    <i class="fas fa-camera"></i>
-                </button>
-                <div id="image-search-preview-hero" style="display: none;">
-                    <span id="image-search-filename-hero"></span>
-                    <button id="clear-image-search-hero" title="清除已选图片">&times;</button>
+        <div id="gallery-view-container">
+            <section class="hero-section">
+                <h1 class="hero-title">智能相册：文搜图、图搜图赋能未来</h1>
+                <div class="search-container-hero">
+                    <input type="file" id="image-search-input-hero" accept="image/*" style="display: none;">
+                    <button id="image-search-upload-button-hero" class="search-image-upload-button" title="上传图片以图搜图">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                    <div id="image-search-preview-hero" style="display: none;">
+                        <span id="image-search-filename-hero"></span>
+                        <button id="clear-image-search-hero" title="清除已选图片">&times;</button>
+                    </div>
+                    <input type="text" id="search-input" placeholder="输入中文描述搜索图片...">
+                    <button id="search-button">
+                        <i class="fas fa-search"></i> 搜索
+                    </button>
                 </div>
-                <input type="text" id="search-input" placeholder="输入中文描述搜索图片...">
-                <button id="search-button">
-                    <i class="fas fa-search"></i> 搜索
-                </button>
-            </div>
-            <div id="search-status" class="status-message hero-status"></div>
-        </section>
+                <div id="search-status" class="status-message hero-status"></div>
+            </section>
+        </div>
+        <div id="face-view-container" style="display: none;">
+            <section class="face-clusters-section">
+                <h2>人脸相册</h2>
+                <div class="face-cluster-carousel-container">
+                    <button class="carousel-arrow left" id="carousel-arrow-left" style="display: none;"><i class="fas fa-chevron-left"></i></button>
+                    <div class="face-cluster-carousel" id="face-cluster-carousel">
+                        <div id="loading-clusters" style="display: none; width: 100%; text-align: center; padding: 20px;">
+                            <i class="fas fa-spinner fa-spin"></i> 正在加载人脸相册...
+                        </div>
+                    </div>
+                    <button class="carousel-arrow right" id="carousel-arrow-right" style="display: none;"><i class="fas fa-chevron-right"></i></button>
+                </div>
+            </section>
 
+            <section class="face-search-section">
+                <div class="search-container-hero">
+                     <input type="file" id="face-search-input-image" accept="image/*" style="display: none;">
+                     <button id="face-search-upload-button" class="search-image-upload-button" title="上传人脸图片搜索">
+                         <i class="fas fa-user-plus"></i>
+                     </button>
+                     <div id="face-search-preview" style="display: none;">
+                         <span id="face-search-filename"></span>
+                         <button id="clear-face-search-image" title="清除已选图片">&times;</button>
+                     </div>
+                     <input type="text" id="face-search-input-text" placeholder="输入人名搜索或上传左侧图片进行搜索...">
+                     <button id="face-search-button-action">
+                         <i class="fas fa-search"></i> 搜索
+                     </button>
+                 </div>
+                 <div id="face-search-status" class="status-message hero-status"></div>
+            </section>
+        </div>
         <section class="gallery-section">
             <div class="gallery-header">
-                 <h2>
+                 <h2 id="gallery-title">
                     图片库 (<span id="total-images-count">0</span> 张)
-                    <span id="search-results-title" style="display:none;">- 搜索结果</span>
-                </h2>
+                 </h2>
                 <div id="upload-status-main" class="status-message" style="text-align: center; margin-bottom:10px;"></div>
             </div>
             <div class="gallery-controls">
@@ -67,7 +102,7 @@
                 </button>
             </div>
             <div id="image-gallery" class="gallery">
-                </div>
+            </div>
             <div id="loading-gallery" style="display: none; text-align: center; padding: 20px;">
                 <i class="fas fa-spinner fa-spin"></i> 加载中...
             </div>
