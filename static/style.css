@@ -993,6 +993,18 @@ body {
   color: var(--gray-700);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.header-actions .status-message {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  min-width: 120px;
+}
+
 .back-to-main-btn {
   background-color: var(--gray-600);
   color: var(--white);
@@ -1036,6 +1048,28 @@ body {
   margin-bottom: 8px;
   font-weight: 500;
   color: var(--gray-700);
+}
+
+/* 特殊处理checkbox的布局 - 让checkbox和label在同一行 */
+.control-group.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.control-group.checkbox-group label {
+  display: inline;
+  margin-bottom: 0;
+  flex-grow: 1;
+  cursor: pointer;
+}
+
+.control-group.checkbox-group input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  margin: 0;
 }
 
 .control-note {

@@ -11,16 +11,20 @@
     <div class="container controls-page">
         <header class="page-header">
             <h1>控制面板</h1>
-            <a href="{{ url_for('index') }}" class="back-to-main-btn">&larr; 返回主页</a>
+            <div class="header-actions">
+                <button id="save-all-settings-button" class="action-button primary-action"><i class="fas fa-save"></i> 保存所有设置</button>
+                <span id="save-settings-status" class="status-message" style="margin-left: 10px;"></span>
+                <a href="{{ url_for('index') }}" class="back-to-main-btn">&larr; 返回主页</a>
+            </div>
         </header>
 
         <section class="control-options-section">
             <h2>应用设置</h2>
-            <div class="control-group">
+            <div class="control-group checkbox-group">
                 <label for="qwen-analysis-toggle-controls">Qwen-VL图片分析 (上传时自动):</label>
                 <input type="checkbox" id="qwen-analysis-toggle-controls">
             </div>
-            <div class="control-group">
+            <div class="control-group checkbox-group">
                 <label for="use-enhanced-search-toggle-controls">使用增强搜索 (利用Qwen描述):</label>
                 <input type="checkbox" id="use-enhanced-search-toggle-controls">
             </div>
@@ -51,7 +55,7 @@
         <section class="control-options-section">
             <h2>人脸识别设置</h2>
             <p class="control-note" style="margin-bottom: 15px; font-size: 0.9em; color: #555;">配置用于人脸检测、聚类和搜索的相关参数。</p>
-            <div class="control-group">
+            <div class="control-group checkbox-group">
                 <label for="face-recognition-toggle-controls">人脸识别功能 (上传时自动):</label>
                 <input type="checkbox" id="face-recognition-toggle-controls">
             </div>
@@ -62,12 +66,6 @@
             <div class="control-group">
                 <label for="face-cluster-threshold-input">人脸聚类相似度阈值:</label>
                 <input type="number" id="face-cluster-threshold-input" class="settings-input" step="0.01" min="0" max="1" placeholder="例如: 0.5 (0到1之间的值)">
-            </div>
-        </section>
-        <section class="control-options-section" style="border: none; background: none; padding-left: 0; padding-right: 0;">
-             <div class="control-group">
-                <button id="save-all-settings-button" class="action-button primary-action"><i class="fas fa-save"></i> 保存所有设置</button>
-                <span id="save-settings-status" class="status-message" style="margin-left: 10px;"></span>
             </div>
         </section>
 
