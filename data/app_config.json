@@ -6,5 +6,5 @@
     "qwen_base_url": "https://www.sophnet.com/api/open-apis/v1",
     "face_recognition_enabled": true,
     "face_api_url": "http://172.24.12.226:19091",
-    "face_cluster_threshold": 0.5
+    "face_cluster_threshold": 0.3
 }
