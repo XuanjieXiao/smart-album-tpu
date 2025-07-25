@@ -94,8 +94,55 @@ batch_enhance_status = {
     "errors": [],
     "last_error": None
 }
+
+# --- 批量CLIP分析状态管理 ---
+batch_clip_status = {
+    "is_running": False,
+    "is_stopped": False,
+    "total_images": 0,
+    "processed_count": 0,
+    "current_image_id": None,
+    "current_image_filename": None,
+    "start_time": None,
+    "errors": [],
+    "last_error": None
+}
+
+# --- 批量人脸检测状态管理 ---
+batch_face_detection_status = {
+    "is_running": False,
+    "is_stopped": False,
+    "total_images": 0,
+    "processed_count": 0,
+    "current_image_id": None,
+    "current_image_filename": None,
+    "start_time": None,
+    "errors": [],
+    "last_error": None
+}
+
+# --- 批量人脸聚类状态管理 ---
+batch_face_clustering_status = {
+    "is_running": False,
+    "is_stopped": False,
+    "total_faces": 0,
+    "processed_count": 0,
+    "current_face_id": None,
+    "start_time": None,
+    "errors": [],
+    "last_error": None
+}
 batch_enhance_thread = None
 batch_enhance_lock = threading.Lock()
+
+batch_clip_thread = None
+batch_clip_lock = threading.Lock()
+
+batch_face_detection_thread = None
+batch_face_detection_lock = threading.Lock()
+
+batch_face_clustering_thread = None
+batch_face_clustering_lock = threading.Lock()
 
 
 # --- 应用配置 (可持久化或从配置文件加载) ---
@@ -251,17 +298,27 @@ def process_single_image_upload(file_storage):
         else:
             thumbnail_path_abs = None 
 
-        clip_img_emb = compute_clip_image_embedding(original_path_abs)
-        if clip_img_emb is None:
-            logging.error(f"无法为图片 '{original_filename}' 生成CLIP embedding。跳过此图片。")
-            if os.path.exists(original_path_abs): os.remove(original_path_abs)
-            if thumbnail_path_abs and os.path.exists(thumbnail_path_abs): os.remove(thumbnail_path_abs)
-            return None
+        # 初始化状态标志位
+        status_flags = {
+            'has_clip_embedding': False,
+            'is_enhanced': False,
+            'has_face_detection': False,
+            'has_face_clustering': False
+        }
 
-        zeros_bce_emb = np.zeros(fu.BCE_EMBEDDING_DIM, dtype=np.float32)
-        concatenated_emb = np.concatenate((clip_img_emb, zeros_bce_emb))
-        
-        # --- MODIFIED: Store relative paths in DB ---
+        # 1. CLIP embedding 处理
+        clip_img_emb = None
+        if app_config.get("clip_embedding_enabled", True):
+            clip_img_emb = compute_clip_image_embedding(original_path_abs)
+            if clip_img_emb is not None:
+                status_flags['has_clip_embedding'] = True
+                logging.info(f"图片 '{original_filename}' CLIP embedding计算成功")
+            else:
+                logging.warning(f"图片 '{original_filename}' CLIP embedding计算失败")
+        else:
+            logging.info(f"CLIP embedding计算已禁用，跳过图片 '{original_filename}'")
+
+        # 创建初始数据库记录
         image_db_id = db.add_image_to_db(
             original_filename=original_filename,
             original_path=relative_original_path, 
@@ -269,108 +326,129 @@ def process_single_image_upload(file_storage):
             clip_embedding=clip_img_emb 
         )
 
-        if image_db_id:
-            actual_faiss_id = image_db_id 
-            db.update_faiss_id_for_image(image_db_id, actual_faiss_id) 
+        if not image_db_id:
+            logging.error(f"图片 '{original_filename}' 存入数据库失败")
+            # Cleanup on failure
+            if os.path.exists(original_path_abs): os.remove(original_path_abs)
+            if thumbnail_path_abs and os.path.exists(thumbnail_path_abs): os.remove(thumbnail_path_abs)
+            return None
 
-            if fu.add_vector_to_index(concatenated_emb, actual_faiss_id):
-                logging.info(f"图片 '{original_filename}' (DB ID: {image_db_id}, FAISS ID: {actual_faiss_id}) 处理完成并入库。")
+        actual_faiss_id = image_db_id 
+        db.update_faiss_id_for_image(image_db_id, actual_faiss_id)
+
+        # 2. FAISS索引处理（如果有CLIP embedding）
+        if clip_img_emb is not None:
+            zeros_bce_emb = np.zeros(fu.BCE_EMBEDDING_DIM, dtype=np.float32)
+            concatenated_emb = np.concatenate((clip_img_emb, zeros_bce_emb))
+            
+            if not fu.add_vector_to_index(concatenated_emb, actual_faiss_id):
+                logging.error(f"图片 '{original_filename}' 添加到FAISS失败")
+                # 回滚数据库记录
+                db.hard_delete_image_from_db(image_db_id)
+                if os.path.exists(original_path_abs): os.remove(original_path_abs)
+                if thumbnail_path_abs and os.path.exists(thumbnail_path_abs): os.remove(thumbnail_path_abs)
+                return None
+
+        # 3. Qwen-VL增强分析处理
+        if app_config.get("qwen_vl_analysis_enabled", True):
+            qwen_result = qwen_service.analyze_image_content(original_path_abs)
+            
+            if qwen_result and qwen_result.get("success") and (qwen_result.get("description") or qwen_result.get("keywords")):
+                db.update_image_enhancement(image_db_id, qwen_result["description"], qwen_result["keywords"])
+                status_flags['is_enhanced'] = True
                 
-                if app_config.get("qwen_vl_analysis_enabled", True):
-                    logging.info(f"全局Qwen-VL分析已开启，开始分析图片 ID: {image_db_id} (文件名: {original_filename})")
-                    qwen_result = qwen_service.analyze_image_content(original_path_abs) # Use absolute path for analysis
-                    
-                    # 检查分析是否成功
-                    if qwen_result and qwen_result.get("success") and (qwen_result.get("description") or qwen_result.get("keywords")):
-                        db.update_image_enhancement(image_db_id, qwen_result["description"], qwen_result["keywords"])
-                        
-                        bce_desc_emb = bce_service.get_bce_embedding(qwen_result["description"]) 
-                        if bce_desc_emb is not None and bce_desc_emb.shape[0] == fu.BCE_EMBEDDING_DIM:
-                            updated_concatenated_emb = np.concatenate((clip_img_emb, bce_desc_emb))
-                            fu.update_vector_in_index(updated_concatenated_emb, actual_faiss_id) 
-                            logging.info(f"图片 ID: {image_db_id} ({original_filename}) Qwen-VL分析完成并更新了FAISS向量。")
-                        else:
-                            logging.warning(f"图片 ID: {image_db_id} ({original_filename}) Qwen-VL分析的BCE embedding生成失败或维度不符。FAISS向量未更新BCE部分。")
+                # 更新FAISS向量（如果有CLIP embedding）
+                if clip_img_emb is not None:
+                    bce_desc_emb = bce_service.get_bce_embedding(qwen_result["description"]) 
+                    if bce_desc_emb is not None and bce_desc_emb.shape[0] == fu.BCE_EMBEDDING_DIM:
+                        updated_concatenated_emb = np.concatenate((clip_img_emb, bce_desc_emb))
+                        fu.update_vector_in_index(updated_concatenated_emb, actual_faiss_id) 
+                        logging.info(f"图片 ID: {image_db_id} Qwen-VL分析完成并更新了FAISS向量")
                     else:
-                        # 分析失败，图片保持未增强状态，等待后续手动触发
-                        error_msg = qwen_result.get("error", "未知错误") if qwen_result else "返回结果为空"
-                        logging.warning(f"图片 ID: {image_db_id} ({original_filename}) Qwen-VL分析失败: {error_msg}。图片保持未增强状态，可稍后手动增强。")
+                        logging.warning(f"图片 ID: {image_db_id} BCE embedding生成失败，FAISS向量未更新BCE部分")
+            else:
+                error_msg = qwen_result.get("error", "未知错误") if qwen_result else "返回结果为空"
+                logging.warning(f"图片 ID: {image_db_id} Qwen-VL分析失败: {error_msg}")
+
+        # 4. 人脸识别处理
+        if app_config.get("face_recognition_upload_enabled", True):
+            detected_faces = face_service.detect_faces(original_path_abs)
+            
+            if detected_faces:
+                logging.info(f"在图片 ID: {image_db_id} 中检测到 {len(detected_faces)} 张人脸")
+                status_flags['has_face_detection'] = True
                 
-                # --- 新增/修改开始 ---
-                # 在图片处理成功后，调用人脸识别流程
-                if app_config.get("face_recognition_enabled", True):
-                    logging.info(f"开始对图片 ID: {image_db_id} 进行人脸识别...")
-                    # 使用绝对路径调用服务
-                    detected_faces = face_service.detect_faces(original_path_abs) 
-                    
-                    if detected_faces:
-                        logging.info(f"在图片 ID: {image_db_id} 中检测到 {len(detected_faces)} 张人脸")
-                        cluster_threshold = app_config.get("face_cluster_threshold", 0.5)
-                        for i, face in enumerate(detected_faces):
-                            feature_vec = face["FeatureData"]
-                            logging.debug(f"处理第 {i+1} 张人脸，特征向量维度: {feature_vec.shape}")
-                            
-                            # 在人脸FAISS中搜索最相似的人脸
-                            sims, face_ids = ffu_face.search_vectors_in_index(feature_vec, top_k=1)
-                            
-                            cluster_id = None
-                            # 如果找到了相似人脸且相似度超过阈值
-                            if face_ids and sims and sims[0] > cluster_threshold:
-                                matched_face_id = face_ids[0]
-                                cluster_id = db.get_cluster_id_by_face_id(matched_face_id)
-                                if cluster_id:
-                                    logging.info(f"找到匹配人脸 (face_id:{matched_face_id}, sim:{sims[0]:.4f})，归入聚类 {cluster_id}")
-                                else:
-                                    logging.warning(f"数据不一致: 找到匹配人脸 face_id:{matched_face_id} 但未找到其聚类。")
-                            else:
-                                logging.info(f"未找到相似人脸 (阈值: {cluster_threshold})，将创建新聚类")
-
-                            # 如果未找到匹配或没有聚类ID，则创建新聚类
-                            if not cluster_id:
-                                cluster_id = db.create_new_face_cluster()
-                                logging.info(f"创建了新的人脸聚类 ID: {cluster_id}")
-
-                            attributes_to_collect = ["Age", "Gender", "Glasses", "HeadPose", "Mask"]
-                            attributes_dict = {key: face.get(key) for key in attributes_to_collect if face.get(key) is not None}
-                            
-
-                            # 将检测到的人脸信息存入数据库
-                            new_face_id = db.add_detected_face(
-                                image_id=image_db_id,
-                                cluster_id=cluster_id,
-                                face_box=face.get("FaceBox", []),
-                                attributes=attributes_dict, # 使用新构建的字典
-                                score=face.get("Score", 0.0)
-                            )
-
-                            if new_face_id:
-                                logging.info(f"将人脸 ID: {new_face_id} 添加到人脸FAISS索引")
-                                # 将新的人脸特征向量添加到人脸FAISS索引中，使用数据库的face_id作为其唯一标识
-                                ffu_face.add_vector_to_index(feature_vec, new_face_id)
+                # 人脸聚类处理
+                if app_config.get("face_clustering_enabled", True):
+                    cluster_threshold = app_config.get("face_cluster_threshold", 0.5)
+                    for i, face in enumerate(detected_faces):
+                        feature_vec = face["FeatureData"]
                         
-                        # 批量处理完后保存一次人脸FAISS索引
-                        ffu_face.save_faiss_index()
-                        logging.info(f"已保存人脸FAISS索引，当前索引大小: {ffu_face.get_face_index_status()}")
-                    else:
-                        logging.info(f"图片 ID: {image_db_id} 中未检测到人脸")
-                # --- 新增/修改结束 ---
+                        # 在人脸FAISS中搜索最相似的人脸
+                        sims, face_ids = ffu_face.search_vectors_in_index(feature_vec, top_k=1)
+                        
+                        cluster_id = None
+                        # 如果找到了相似人脸且相似度超过阈值
+                        if face_ids and sims and sims[0] > cluster_threshold:
+                            matched_face_id = face_ids[0]
+                            cluster_id = db.get_cluster_id_by_face_id(matched_face_id)
+                            if cluster_id:
+                                logging.info(f"找到匹配人脸 (face_id:{matched_face_id}, sim:{sims[0]:.4f})，归入聚类 {cluster_id}")
+                        
+                        # 如果未找到匹配，创建新聚类
+                        if not cluster_id:
+                            cluster_id = db.create_new_face_cluster()
+                            logging.info(f"创建了新的人脸聚类 ID: {cluster_id}")
 
-                return {
-                    "id": image_db_id, 
-                    "faiss_id": actual_faiss_id, 
-                    "filename": original_filename, 
-                    "status": "success"
-                }
-            else: 
-                logging.error(f"图片 '{original_filename}' 添加到FAISS失败。回滚数据库记录。")
-                db.hard_delete_image_from_db(image_db_id) 
-        else: 
-            logging.error(f"图片 '{original_filename}' 存入数据库失败。")
+                        attributes_to_collect = ["Age", "Gender", "Glasses", "HeadPose", "Mask"]
+                        attributes_dict = {key: face.get(key) for key in attributes_to_collect if face.get(key) is not None}
+                        
+                        # 将检测到的人脸信息存入数据库
+                        new_face_id = db.add_detected_face(
+                            image_id=image_db_id,
+                            cluster_id=cluster_id,
+                            face_box=face.get("FaceBox", []),
+                            attributes=attributes_dict,
+                            score=face.get("Score", 0.0),
+                            feature_vector=face.get("FeatureData", []).tolist() if face.get("FeatureData") is not None else None
+                        )
 
-        # Cleanup on failure
-        if os.path.exists(original_path_abs): os.remove(original_path_abs)
-        if thumbnail_path_abs and os.path.exists(thumbnail_path_abs): os.remove(thumbnail_path_abs)
-        return None
+                        if new_face_id:
+                            # 将新的人脸特征向量添加到人脸FAISS索引中
+                            ffu_face.add_vector_to_index(feature_vec, new_face_id)
+                    
+                    status_flags['has_face_clustering'] = True
+                    # 保存人脸FAISS索引
+                    ffu_face.save_faiss_index()
+                else:
+                    # 人脸聚类被禁用，只存储人脸信息但不进行聚类
+                    for face in detected_faces:
+                        attributes_to_collect = ["Age", "Gender", "Glasses", "HeadPose", "Mask"]
+                        attributes_dict = {key: face.get(key) for key in attributes_to_collect if face.get(key) is not None}
+                        
+                        db.add_detected_face(
+                            image_id=image_db_id,
+                            cluster_id=None,  # 不进行聚类
+                            face_box=face.get("FaceBox", []),
+                            attributes=attributes_dict,
+                            score=face.get("Score", 0.0),
+                            feature_vector=face.get("FeatureData", []).tolist() if face.get("FeatureData") is not None else None
+                        )
+            else:
+                logging.info(f"图片 ID: {image_db_id} 中未检测到人脸")
+
+        # 5. 更新状态标志位
+        db.update_image_status_flags(image_db_id, **status_flags)
+
+        logging.info(f"图片 '{original_filename}' (DB ID: {image_db_id}, FAISS ID: {actual_faiss_id}) 处理完成，状态标志位: {status_flags}")
+        
+        return {
+            "id": image_db_id, 
+            "faiss_id": actual_faiss_id, 
+            "filename": original_filename, 
+            "status": "success",
+            "analysis_flags": status_flags
+        }
 
     except Exception as e:
         logging.error(f"处理上传图片 '{original_filename}' 时发生严重错误: {e}", exc_info=True)
@@ -379,7 +457,8 @@ def process_single_image_upload(file_storage):
                 try: 
                     fu.faiss_index.remove_ids(np.array([actual_faiss_id], dtype='int64'))
                     logging.info(f"FAISS ID {actual_faiss_id} removed during error cleanup.")
-                except Exception as fe: logging.error(f"处理错误后FAISS回滚失败: {fe}")
+                except Exception as fe: 
+                    logging.error(f"处理错误后FAISS回滚失败: {fe}")
             db.hard_delete_image_from_db(image_db_id) 
         
         if os.path.exists(original_path_abs): os.remove(original_path_abs)
@@ -410,7 +489,7 @@ def batch_enhance_worker():
         logging.info("开始批量增强分析...")
         
         # 获取未增强的图片列表
-        unenhanced_images = db.get_images_for_enhancement(limit=10000)  # 设置一个较大的限制
+        unenhanced_images = db.get_images_for_qwen_enhancement(limit=10000)  # 使用新的函数
         
         with batch_enhance_lock:
             batch_enhance_status["total_images"] = len(unenhanced_images)
@@ -466,9 +545,22 @@ def batch_enhance_worker():
                     )
                     
                     if update_success:
-                        # 获取CLIP embedding并更新FAISS
-                        clip_img_emb = db.get_clip_embedding_for_image(image_record["id"])
+                        # 检查是否有CLIP embedding，如果没有则先生成
+                        clip_img_emb = image_record["clip_embedding"]
+                        if clip_img_emb is None:
+                            logging.info(f"图片 ID: {image_record['id']} 缺少CLIP embedding，正在重新计算...")
+                            clip_img_emb = compute_clip_image_embedding(absolute_original_path)
+                            if clip_img_emb is not None:
+                                # 更新数据库中的CLIP embedding
+                                db.update_image_clip_embedding(image_record["id"], clip_img_emb)
+                                # 更新CLIP状态标志位
+                                db.update_image_status_flags(image_record["id"], has_clip_embedding=True)
+                                logging.info(f"图片 ID: {image_record['id']} CLIP embedding重新计算成功")
+                            else:
+                                logging.error(f"图片 ID: {image_record['id']} CLIP embedding重新计算失败")
+                        
                         if clip_img_emb is not None:
+                            # 生成BCE embedding
                             bce_desc_emb = bce_service.get_bce_embedding(qwen_result["description"])
                             if bce_desc_emb is not None and bce_desc_emb.shape[0] == fu.BCE_EMBEDDING_DIM:
                                 updated_concatenated_emb = np.concatenate((clip_img_emb, bce_desc_emb))
@@ -478,7 +570,19 @@ def batch_enhance_worker():
                             
                             # 更新FAISS向量
                             faiss_id = image_record["faiss_id"] if image_record["faiss_id"] else image_record["id"]
-                            fu.update_vector_in_index(updated_concatenated_emb, faiss_id)
+                            if fu.update_vector_in_index(updated_concatenated_emb, faiss_id):
+                                logging.info(f"图片 ID: {image_record['id']} FAISS向量更新成功")
+                            else:
+                                # 如果更新失败，尝试添加新向量
+                                if fu.add_vector_to_index(updated_concatenated_emb, faiss_id):
+                                    logging.info(f"图片 ID: {image_record['id']} FAISS向量添加成功")
+                                else:
+                                    logging.error(f"图片 ID: {image_record['id']} FAISS向量更新和添加都失败")
+                        else:
+                            logging.warning(f"图片 ID: {image_record['id']} 无法获取CLIP embedding，跳过FAISS更新")
+                        
+                        # 更新状态标志位
+                        db.update_image_status_flags(image_record["id"], is_enhanced=True)
                         
                         logging.info(f"图片 ID: {image_record['id']} 增强分析完成。")
                     else:
@@ -538,6 +642,424 @@ def batch_enhance_worker():
             batch_enhance_status["current_image_filename"] = None
         
         logging.info("批量增强分析线程结束。")
+
+def batch_clip_worker():
+    """批量CLIP embedding计算的工作线程函数"""
+    global batch_clip_status
+    
+    with batch_clip_lock:
+        if batch_clip_status["is_running"]:
+            logging.warning("批量CLIP分析已在运行中，跳过重复启动。")
+            return
+            
+        batch_clip_status.update({
+            "is_running": True,
+            "is_stopped": False,
+            "processed_count": 0,
+            "current_image_id": None,
+            "current_image_filename": None,
+            "start_time": time.time(),
+            "errors": [],
+            "last_error": None
+        })
+    
+    try:
+        logging.info("开始批量CLIP embedding计算...")
+        
+        # 获取没有CLIP embedding的图片列表
+        images_without_clip = db.get_images_without_clip_embedding(limit=10000)
+        
+        with batch_clip_lock:
+            batch_clip_status["total_images"] = len(images_without_clip)
+        
+        if not images_without_clip:
+            logging.info("没有需要计算CLIP embedding的图片。")
+            with batch_clip_lock:
+                batch_clip_status["is_running"] = False
+            return
+        
+        logging.info(f"找到 {len(images_without_clip)} 张需要计算CLIP embedding的图片，开始处理...")
+        
+        for image_record in images_without_clip:
+            # 检查是否被停止
+            with batch_clip_lock:
+                if batch_clip_status["is_stopped"]:
+                    logging.info("批量CLIP分析被用户停止。")
+                    break
+                    
+                # 更新当前处理状态
+                batch_clip_status["current_image_id"] = image_record["id"]
+                original_path = image_record["original_path"]
+                batch_clip_status["current_image_filename"] = os.path.basename(original_path) if original_path else f"ID_{image_record['id']}"
+            
+            try:
+                # 构建绝对路径
+                absolute_original_path = os.path.join(CURRENT_DIR, image_record["original_path"])
+                
+                if not os.path.exists(absolute_original_path):
+                    error_msg = f"图片文件不存在: {absolute_original_path}"
+                    logging.warning(error_msg)
+                    with batch_clip_lock:
+                        batch_clip_status["errors"].append({
+                            "image_id": image_record["id"], 
+                            "error": error_msg
+                        })
+                        batch_clip_status["last_error"] = error_msg
+                    continue
+                
+                logging.info(f"正在计算CLIP embedding - 图片 ID: {image_record['id']} - {batch_clip_status['current_image_filename']}")
+                
+                # 计算CLIP embedding
+                clip_img_emb = compute_clip_image_embedding(absolute_original_path)
+                
+                if clip_img_emb is not None:
+                    # 更新数据库中的CLIP embedding
+                    if db.update_image_clip_embedding(image_record["id"], clip_img_emb):
+                        # 更新FAISS索引
+                        zeros_bce_emb = np.zeros(fu.BCE_EMBEDDING_DIM, dtype=np.float32)
+                        concatenated_emb = np.concatenate((clip_img_emb, zeros_bce_emb))
+                        
+                        # 获取faiss_id
+                        faiss_id = image_record["faiss_id"] if image_record["faiss_id"] else image_record["id"]
+                        
+                        # 更新或添加到FAISS索引
+                        if fu.add_vector_to_index(concatenated_emb, faiss_id):
+                            # 更新状态标志位
+                            db.update_image_status_flags(image_record["id"], has_clip_embedding=True)
+                            logging.info(f"图片 ID: {image_record['id']} CLIP embedding计算完成并更新FAISS索引。")
+                        else:
+                            error_msg = f"图片 ID: {image_record['id']} FAISS索引更新失败"
+                            logging.error(error_msg)
+                            with batch_clip_lock:
+                                batch_clip_status["errors"].append({
+                                    "image_id": image_record["id"], 
+                                    "error": error_msg
+                                })
+                                batch_clip_status["last_error"] = error_msg
+                    else:
+                        error_msg = f"图片 ID: {image_record['id']} 数据库更新失败"
+                        logging.error(error_msg)
+                        with batch_clip_lock:
+                            batch_clip_status["errors"].append({
+                                "image_id": image_record["id"], 
+                                "error": error_msg
+                            })
+                            batch_clip_status["last_error"] = error_msg
+                else:
+                    error_msg = f"图片 ID: {image_record['id']} CLIP embedding计算失败"
+                    logging.warning(error_msg)
+                    with batch_clip_lock:
+                        batch_clip_status["errors"].append({
+                            "image_id": image_record["id"], 
+                            "error": error_msg
+                        })
+                        batch_clip_status["last_error"] = error_msg
+                
+            except Exception as e:
+                error_msg = f"处理图片 ID: {image_record['id']} 时发生异常: {str(e)}"
+                logging.error(error_msg, exc_info=True)
+                with batch_clip_lock:
+                    batch_clip_status["errors"].append({
+                        "image_id": image_record["id"], 
+                        "error": error_msg
+                    })
+                    batch_clip_status["last_error"] = error_msg
+            
+            # 更新处理计数
+            with batch_clip_lock:
+                batch_clip_status["processed_count"] += 1
+            
+            # 添加小延迟避免过度占用资源
+            time.sleep(0.1)
+        
+        # 保存FAISS索引
+        try:
+            fu.save_faiss_index()
+            logging.info("批量CLIP分析完成，已保存FAISS索引。")
+        except Exception as e:
+            logging.error(f"保存FAISS索引时发生错误: {e}")
+        
+    except Exception as e:
+        error_msg = f"批量CLIP分析过程中发生严重错误: {str(e)}"
+        logging.error(error_msg, exc_info=True)
+        with batch_clip_lock:
+            batch_clip_status["last_error"] = error_msg
+    
+    finally:
+        with batch_clip_lock:
+            batch_clip_status["is_running"] = False
+            batch_clip_status["current_image_id"] = None
+            batch_clip_status["current_image_filename"] = None
+        
+        logging.info("批量CLIP分析线程结束。")
+
+def batch_face_detection_worker():
+    """批量人脸检测的工作线程函数"""
+    global batch_face_detection_status
+    
+    with batch_face_detection_lock:
+        if batch_face_detection_status["is_running"]:
+            logging.warning("批量人脸检测已在运行中，跳过重复启动。")
+            return
+            
+        batch_face_detection_status.update({
+            "is_running": True,
+            "is_stopped": False,
+            "processed_count": 0,
+            "current_image_id": None,
+            "current_image_filename": None,
+            "start_time": time.time(),
+            "errors": [],
+            "last_error": None
+        })
+    
+    try:
+        logging.info("开始批量人脸检测...")
+        
+        # 获取没有人脸检测的图片列表
+        images_without_faces = db.get_images_without_face_detection(limit=10000)
+        
+        with batch_face_detection_lock:
+            batch_face_detection_status["total_images"] = len(images_without_faces)
+        
+        if not images_without_faces:
+            logging.info("没有需要进行人脸检测的图片。")
+            with batch_face_detection_lock:
+                batch_face_detection_status["is_running"] = False
+            return
+        
+        logging.info(f"找到 {len(images_without_faces)} 张需要人脸检测的图片，开始处理...")
+        
+        for image_record in images_without_faces:
+            # 检查是否被停止
+            with batch_face_detection_lock:
+                if batch_face_detection_status["is_stopped"]:
+                    logging.info("批量人脸检测被用户停止。")
+                    break
+                    
+                # 更新当前处理状态
+                batch_face_detection_status["current_image_id"] = image_record["id"]
+                original_path = image_record["original_path"]
+                batch_face_detection_status["current_image_filename"] = os.path.basename(original_path) if original_path else f"ID_{image_record['id']}"
+            
+            try:
+                # 构建绝对路径
+                absolute_original_path = os.path.join(CURRENT_DIR, image_record["original_path"])
+                
+                if not os.path.exists(absolute_original_path):
+                    error_msg = f"图片文件不存在: {absolute_original_path}"
+                    logging.warning(error_msg)
+                    with batch_face_detection_lock:
+                        batch_face_detection_status["errors"].append({
+                            "image_id": image_record["id"], 
+                            "error": error_msg
+                        })
+                        batch_face_detection_status["last_error"] = error_msg
+                    continue
+                
+                logging.info(f"正在进行人脸检测 - 图片 ID: {image_record['id']} - {batch_face_detection_status['current_image_filename']}")
+                
+                # 进行人脸检测
+                detected_faces = face_service.detect_faces(absolute_original_path)
+                
+                if detected_faces:
+                    logging.info(f"在图片 ID: {image_record['id']} 中检测到 {len(detected_faces)} 张人脸")
+                    
+                    for i, face in enumerate(detected_faces):
+                        attributes_to_collect = ["Age", "Gender", "Glasses", "HeadPose", "Mask"]
+                        attributes_dict = {key: face.get(key) for key in attributes_to_collect if face.get(key) is not None}
+                        
+                        # 将检测到的人脸信息存入数据库，但不进行聚类（cluster_id设为None）
+                        new_face_id = db.add_detected_face(
+                            image_id=image_record["id"],
+                            cluster_id=None,  # 批量检测时不自动聚类
+                            face_box=face.get("FaceBox", []),
+                            attributes=attributes_dict,
+                            score=face.get("Score", 0.0),
+                            feature_vector=face.get("FeatureData", []).tolist() if face.get("FeatureData") is not None else None
+                        )
+                        
+                        if new_face_id:
+                            logging.info(f"存储人脸 ID: {new_face_id}")
+                        else:
+                            error_msg = f"图片 ID: {image_record['id']} 第 {i+1} 张人脸存储数据库失败"
+                            logging.error(error_msg)
+                            with batch_face_detection_lock:
+                                batch_face_detection_status["errors"].append({
+                                    "image_id": image_record["id"], 
+                                    "error": error_msg
+                                })
+                                batch_face_detection_status["last_error"] = error_msg
+                    
+                    # 更新状态标志位
+                    db.update_image_status_flags(image_record["id"], has_face_detection=True)
+                    logging.info(f"图片 ID: {image_record['id']} 人脸检测完成")
+                else:
+                    # 即使没有检测到人脸，也要更新状态标志位表示已进行过人脸检测
+                    db.update_image_status_flags(image_record["id"], has_face_detection=True)
+                    logging.info(f"图片 ID: {image_record['id']} 中未检测到人脸，但状态已更新为已检测")
+                
+            except Exception as e:
+                error_msg = f"处理图片 ID: {image_record['id']} 时发生异常: {str(e)}"
+                logging.error(error_msg, exc_info=True)
+                with batch_face_detection_lock:
+                    batch_face_detection_status["errors"].append({
+                        "image_id": image_record["id"], 
+                        "error": error_msg
+                    })
+                    batch_face_detection_status["last_error"] = error_msg
+            
+            # 更新处理计数
+            with batch_face_detection_lock:
+                batch_face_detection_status["processed_count"] += 1
+            
+            # 添加小延迟避免过度占用资源
+            time.sleep(0.1)
+        
+    except Exception as e:
+        error_msg = f"批量人脸检测过程中发生严重错误: {str(e)}"
+        logging.error(error_msg, exc_info=True)
+        with batch_face_detection_lock:
+            batch_face_detection_status["last_error"] = error_msg
+    
+    finally:
+        with batch_face_detection_lock:
+            batch_face_detection_status["is_running"] = False
+            batch_face_detection_status["current_image_id"] = None
+            batch_face_detection_status["current_image_filename"] = None
+        
+        logging.info("批量人脸检测线程结束。")
+
+def batch_face_clustering_worker():
+    """批量人脸聚类的工作线程函数"""
+    global batch_face_clustering_status
+    
+    with batch_face_clustering_lock:
+        if batch_face_clustering_status["is_running"]:
+            logging.warning("批量人脸聚类已在运行中，跳过重复启动。")
+            return
+            
+        batch_face_clustering_status.update({
+            "is_running": True,
+            "is_stopped": False,
+            "processed_count": 0,
+            "current_face_id": None,
+            "start_time": time.time(),
+            "errors": [],
+            "last_error": None
+        })
+    
+    try:
+        logging.info("开始批量人脸聚类...")
+        
+        # 获取没有聚类的人脸列表
+        faces_without_cluster = db.get_faces_without_cluster(limit=10000)
+        
+        with batch_face_clustering_lock:
+            batch_face_clustering_status["total_faces"] = len(faces_without_cluster)
+        
+        if not faces_without_cluster:
+            logging.info("没有需要聚类的人脸。")
+            with batch_face_clustering_lock:
+                batch_face_clustering_status["is_running"] = False
+            return
+        
+        logging.info(f"找到 {len(faces_without_cluster)} 张需要聚类的人脸，开始处理...")
+        cluster_threshold = app_config.get("face_cluster_threshold", 0.5)
+        
+        for face_record in faces_without_cluster:
+            # 检查是否被停止
+            with batch_face_clustering_lock:
+                if batch_face_clustering_status["is_stopped"]:
+                    logging.info("批量人脸聚类被用户停止。")
+                    break
+                    
+                # 更新当前处理状态
+                batch_face_clustering_status["current_face_id"] = face_record["face_id"]
+            
+            try:
+                logging.info(f"正在处理人脸聚类 - 人脸 ID: {face_record['face_id']}")
+                
+                # 获取人脸特征向量
+                if not face_record["feature_vector"]:
+                    logging.warning(f"人脸 ID: {face_record['face_id']} 没有特征向量，跳过聚类")
+                    continue
+                
+                feature_vec = np.array(json.loads(face_record["feature_vector"]), dtype=np.float32)
+                
+                # 在人脸FAISS中搜索最相似的人脸
+                sims, face_ids = ffu_face.search_vectors_in_index(feature_vec, top_k=1)
+                
+                cluster_id = None
+                # 如果找到了相似人脸且相似度超过阈值
+                if face_ids and sims and sims[0] > cluster_threshold:
+                    matched_face_id = face_ids[0]
+                    cluster_id = db.get_cluster_id_by_face_id(matched_face_id)
+                    if cluster_id:
+                        logging.info(f"人脸 ID: {face_record['face_id']} 找到匹配聚类 {cluster_id} (相似度: {sims[0]:.4f})")
+                    else:
+                        logging.warning(f"找到匹配人脸 {matched_face_id} 但无聚类信息")
+                
+                # 如果未找到匹配，创建新聚类
+                if not cluster_id:
+                    cluster_id = db.create_new_face_cluster()
+                    logging.info(f"为人脸 ID: {face_record['face_id']} 创建新聚类 {cluster_id}")
+                
+                # 更新人脸的聚类信息
+                if db.update_face_cluster(face_record["face_id"], cluster_id):
+                    # 将人脸特征向量添加到FAISS索引
+                    ffu_face.add_vector_to_index(feature_vec, face_record["face_id"])
+                    
+                    # 更新对应图片的人脸聚类状态标志位
+                    db.update_image_status_flags(face_record["image_id"], has_face_clustering=True)
+                    
+                    logging.info(f"人脸 ID: {face_record['face_id']} 聚类完成")
+                else:
+                    error_msg = f"人脸 ID: {face_record['face_id']} 更新聚类信息失败"
+                    logging.error(error_msg)
+                    with batch_face_clustering_lock:
+                        batch_face_clustering_status["errors"].append({
+                            "face_id": face_record["face_id"], 
+                            "error": error_msg
+                        })
+                        batch_face_clustering_status["last_error"] = error_msg
+                
+            except Exception as e:
+                error_msg = f"处理人脸 ID: {face_record['face_id']} 时发生异常: {str(e)}"
+                logging.error(error_msg, exc_info=True)
+                with batch_face_clustering_lock:
+                    batch_face_clustering_status["errors"].append({
+                        "face_id": face_record["face_id"], 
+                        "error": error_msg
+                    })
+                    batch_face_clustering_status["last_error"] = error_msg
+            
+            # 更新处理计数
+            with batch_face_clustering_lock:
+                batch_face_clustering_status["processed_count"] += 1
+            
+            # 添加小延迟避免过度占用资源
+            time.sleep(0.1)
+        
+        # 保存人脸FAISS索引
+        try:
+            ffu_face.save_faiss_index()
+            logging.info("批量人脸聚类完成，已保存人脸FAISS索引。")
+        except Exception as e:
+            logging.error(f"保存人脸FAISS索引时发生错误: {e}")
+        
+    except Exception as e:
+        error_msg = f"批量人脸聚类过程中发生严重错误: {str(e)}"
+        logging.error(error_msg, exc_info=True)
+        with batch_face_clustering_lock:
+            batch_face_clustering_status["last_error"] = error_msg
+    
+    finally:
+        with batch_face_clustering_lock:
+            batch_face_clustering_status["is_running"] = False
+            batch_face_clustering_status["current_face_id"] = None
+        
+        logging.info("批量人脸聚类线程结束。")
 
 # --- API 路由 ---
 @app.route('/')
@@ -849,6 +1371,22 @@ def handle_app_settings():
             updated_any = True
 
         # --- 新增/修改开始 ---
+        # 处理上传时各种功能开关
+        if 'clip_embedding_enabled' in data and isinstance(data['clip_embedding_enabled'], bool):
+            app_config['clip_embedding_enabled'] = data['clip_embedding_enabled']
+            logging.info(f"CLIP embedding计算开关已更新为: {app_config['clip_embedding_enabled']}")
+            updated_any = True
+
+        if 'face_recognition_upload_enabled' in data and isinstance(data['face_recognition_upload_enabled'], bool):
+            app_config['face_recognition_upload_enabled'] = data['face_recognition_upload_enabled']
+            logging.info(f"上传时人脸识别开关已更新为: {app_config['face_recognition_upload_enabled']}")
+            updated_any = True
+
+        if 'face_clustering_enabled' in data and isinstance(data['face_clustering_enabled'], bool):
+            app_config['face_clustering_enabled'] = data['face_clustering_enabled']
+            logging.info(f"人脸聚类开关已更新为: {app_config['face_clustering_enabled']}")
+            updated_any = True
+
         # 处理人脸识别相关配置
         if 'face_recognition_enabled' in data and isinstance(data['face_recognition_enabled'], bool):
             app_config['face_recognition_enabled'] = data['face_recognition_enabled']
@@ -1034,6 +1572,186 @@ def stop_batch_enhance_api():
         return jsonify({
             "success": True,
             "message": "正在停止批量增强分析..."
+        }), 200
+
+# --- 批量CLIP分析API ---
+@app.route('/batch_clip/status', methods=['GET'])
+def get_batch_clip_status_api():
+    """获取批量CLIP分析状态"""
+    global batch_clip_status
+    with batch_clip_lock:
+        status_copy = batch_clip_status.copy()
+        if status_copy.get("start_time"):
+            import time
+            elapsed_time = time.time() - status_copy["start_time"]
+            status_copy["elapsed_time"] = elapsed_time
+        return jsonify(status_copy), 200
+
+@app.route('/batch_clip/start', methods=['POST'])
+def start_batch_clip_api():
+    """启动批量CLIP分析"""
+    global batch_clip_thread
+    
+    with batch_clip_lock:
+        if batch_clip_status["is_running"]:
+            return jsonify({
+                "success": False, 
+                "error": "批量CLIP分析已在运行中"
+            }), 400
+    
+    try:
+        batch_clip_thread = threading.Thread(target=batch_clip_worker)
+        batch_clip_thread.start()
+        logging.info("批量CLIP分析线程已启动")
+        return jsonify({
+            "success": True,
+            "message": "批量CLIP分析已启动"
+        }), 200
+    except Exception as e:
+        logging.error(f"启动批量CLIP分析失败: {e}")
+        return jsonify({
+            "success": False,
+            "error": f"启动失败: {str(e)}"
+        }), 500
+
+@app.route('/batch_clip/stop', methods=['POST'])
+def stop_batch_clip_api():
+    """停止批量CLIP分析"""
+    global batch_clip_status
+    
+    with batch_clip_lock:
+        if not batch_clip_status["is_running"]:
+            return jsonify({
+                "success": False,
+                "error": "当前没有正在运行的批量CLIP分析"
+            }), 400
+            
+        batch_clip_status["is_stopped"] = True
+        
+        logging.info("用户请求停止批量CLIP分析")
+        return jsonify({
+            "success": True,
+            "message": "正在停止批量CLIP分析..."
+        }), 200
+
+# --- 批量人脸检测API ---
+@app.route('/batch_face_detection/status', methods=['GET'])
+def get_batch_face_detection_status_api():
+    """获取批量人脸检测状态"""
+    global batch_face_detection_status
+    with batch_face_detection_lock:
+        status_copy = batch_face_detection_status.copy()
+        if status_copy.get("start_time"):
+            import time
+            elapsed_time = time.time() - status_copy["start_time"]
+            status_copy["elapsed_time"] = elapsed_time
+        return jsonify(status_copy), 200
+
+@app.route('/batch_face_detection/start', methods=['POST'])
+def start_batch_face_detection_api():
+    """启动批量人脸检测"""
+    global batch_face_detection_thread
+    
+    with batch_face_detection_lock:
+        if batch_face_detection_status["is_running"]:
+            return jsonify({
+                "success": False, 
+                "error": "批量人脸检测已在运行中"
+            }), 400
+    
+    try:
+        batch_face_detection_thread = threading.Thread(target=batch_face_detection_worker)
+        batch_face_detection_thread.start()
+        logging.info("批量人脸检测线程已启动")
+        return jsonify({
+            "success": True,
+            "message": "批量人脸检测已启动"
+        }), 200
+    except Exception as e:
+        logging.error(f"启动批量人脸检测失败: {e}")
+        return jsonify({
+            "success": False,
+            "error": f"启动失败: {str(e)}"
+        }), 500
+
+@app.route('/batch_face_detection/stop', methods=['POST'])
+def stop_batch_face_detection_api():
+    """停止批量人脸检测"""
+    global batch_face_detection_status
+    
+    with batch_face_detection_lock:
+        if not batch_face_detection_status["is_running"]:
+            return jsonify({
+                "success": False,
+                "error": "当前没有正在运行的批量人脸检测"
+            }), 400
+            
+        batch_face_detection_status["is_stopped"] = True
+        
+        logging.info("用户请求停止批量人脸检测")
+        return jsonify({
+            "success": True,
+            "message": "正在停止批量人脸检测..."
+        }), 200
+
+# --- 批量人脸聚类API ---
+@app.route('/batch_face_clustering/status', methods=['GET'])
+def get_batch_face_clustering_status_api():
+    """获取批量人脸聚类状态"""
+    global batch_face_clustering_status
+    with batch_face_clustering_lock:
+        status_copy = batch_face_clustering_status.copy()
+        if status_copy.get("start_time"):
+            import time
+            elapsed_time = time.time() - status_copy["start_time"]
+            status_copy["elapsed_time"] = elapsed_time
+        return jsonify(status_copy), 200
+
+@app.route('/batch_face_clustering/start', methods=['POST'])
+def start_batch_face_clustering_api():
+    """启动批量人脸聚类"""
+    global batch_face_clustering_thread
+    
+    with batch_face_clustering_lock:
+        if batch_face_clustering_status["is_running"]:
+            return jsonify({
+                "success": False, 
+                "error": "批量人脸聚类已在运行中"
+            }), 400
+    
+    try:
+        batch_face_clustering_thread = threading.Thread(target=batch_face_clustering_worker)
+        batch_face_clustering_thread.start()
+        logging.info("批量人脸聚类线程已启动")
+        return jsonify({
+            "success": True,
+            "message": "批量人脸聚类已启动"
+        }), 200
+    except Exception as e:
+        logging.error(f"启动批量人脸聚类失败: {e}")
+        return jsonify({
+            "success": False,
+            "error": f"启动失败: {str(e)}"
+        }), 500
+
+@app.route('/batch_face_clustering/stop', methods=['POST'])
+def stop_batch_face_clustering_api():
+    """停止批量人脸聚类"""
+    global batch_face_clustering_status
+    
+    with batch_face_clustering_lock:
+        if not batch_face_clustering_status["is_running"]:
+            return jsonify({
+                "success": False,
+                "error": "当前没有正在运行的批量人脸聚类"
+            }), 400
+            
+        batch_face_clustering_status["is_stopped"] = True
+        
+        logging.info("用户请求停止批量人脸聚类")
+        return jsonify({
+            "success": True,
+            "message": "正在停止批量人脸聚类..."
         }), 200
 
 @app.route('/images', methods=['GET'])
@@ -1452,6 +2170,18 @@ if __name__ == '__main__':
     
     load_app_config()
     db.init_db() 
+    
+    # 清理损坏的embedding数据
+    logging.info("正在检查并清理损坏的embedding数据...")
+    try:
+        cleaned_count = db.clean_corrupted_embeddings()
+        if cleaned_count > 0:
+            logging.info(f"已清理 {cleaned_count} 条损坏的embedding记录")
+        elif cleaned_count == 0:
+            logging.info("未发现损坏的embedding数据")
+    except Exception as e:
+        logging.error(f"清理embedding数据时出错: {e}")
+    
     fu.init_faiss_index() 
 
     # --- 新增/修改开始 ---

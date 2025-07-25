@@ -134,46 +134,9 @@ def get_faiss_index_ntotal():
         return faiss_index.ntotal
     return 0
 
-# 初始化时加载/创建索引
-init_faiss_index()
+
 
 if __name__ == '__main__':
+    # 初始化时加载/创建索引
+    init_faiss_index()
     print(f"FAISS索引初始化完毕。当前向量数: {get_faiss_index_ntotal()}, 维度: {TOTAL_EMBEDDING_DIM}")
-    
-    # 测试添加
-    # test_id_1 = 1001
-    # test_vec_1 = np.random.rand(TOTAL_EMBEDDING_DIM).astype(np.float32)
-    # test_vec_1 /= np.linalg.norm(test_vec_1) # 归一化
-    # add_vector_to_index(test_vec_1, test_id_1)
-
-    # test_id_2 = 1002
-    # test_vec_2 = np.random.rand(TOTAL_EMBEDDING_DIM).astype(np.float32)
-    # test_vec_2 /= np.linalg.norm(test_vec_2)
-    # add_vector_to_index(test_vec_2, test_id_2)
-    
-    # print(f"添加后向量数: {get_faiss_index_ntotal()}")
-
-    # # 测试搜索
-    # if get_faiss_index_ntotal() > 0:
-    #     query_vec = test_vec_1 # 用自身搜索
-    #     distances, indices = search_vectors_in_index(query_vec, top_k=5)
-    #     print("\n搜索结果:")
-    #     for dist, idx in zip(distances, indices):
-    #         print(f"  ID: {idx}, 相似度 (内积): {dist:.4f}")
-    
-    # # 测试更新
-    # test_vec_1_updated = np.random.rand(TOTAL_EMBEDDING_DIM).astype(np.float32)
-    # test_vec_1_updated /= np.linalg.norm(test_vec_1_updated)
-    # update_vector_in_index(test_vec_1_updated, test_id_1)
-    # print(f"更新后向量数: {get_faiss_index_ntotal()}")
-
-    # if get_faiss_index_ntotal() > 0:
-    #     distances_updated, indices_updated = search_vectors_in_index(test_vec_1_updated, top_k=5)
-    #     print("\n更新后用新向量搜索结果:")
-    #     for dist, idx in zip(distances_updated, indices_updated):
-    #         print(f"  ID: {idx}, 相似度: {dist:.4f}")
-    
-    # # 保存索引
-    # save_faiss_index()
-
-

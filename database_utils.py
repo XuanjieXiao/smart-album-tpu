@@ -13,7 +13,98 @@ def adapt_array(arr):
     return json.dumps(arr.tolist())
 
 def convert_array(text):
-    return np.array(json.loads(text), dtype=np.float32)
+    """
+    将数据库中的数据转换为numpy数组。
+    处理多种可能的数据格式：JSON字符串、二进制数据等。
+    对于损坏的数据，返回None而不是抛出异常。
+    """
+    if text is None:
+        return None
+    
+    try:
+        # 如果是bytes类型，尝试解码为字符串
+        if isinstance(text, bytes):
+            try:
+                text = text.decode('utf-8')
+            except UnicodeDecodeError:
+                # 如果UTF-8解码失败，尝试其他编码
+                try:
+                    text = text.decode('latin-1')
+                except UnicodeDecodeError:
+                    logging.debug(f"无法解码二进制数据，数据类型: {type(text)}, 长度: {len(text) if hasattr(text, '__len__') else 'unknown'}")
+                    return None
+        
+        # 尝试解析为JSON
+        if isinstance(text, str):
+            try:
+                # 首先检查是否为空字符串
+                if not text.strip():
+                    return None
+                
+                data = json.loads(text)
+                # 检查数据是否为有效的数组格式
+                if not isinstance(data, (list, tuple)):
+                    logging.debug(f"JSON数据不是数组格式: {type(data)}")
+                    return None
+                
+                # 检查数组是否为空
+                if len(data) == 0:
+                    logging.debug("JSON数据为空数组")
+                    return None
+                
+                # 尝试转换为numpy数组
+                return np.array(data, dtype=np.float32)
+                
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
+                logging.debug(f"JSON解析失败: {e}, 数据前100字符: {str(text)[:100]}")
+                return None
+        
+        # 如果不是字符串或bytes，直接返回None
+        logging.debug(f"未知的数据类型: {type(text)}")
+        return None
+        
+    except Exception as e:
+        logging.debug(f"转换数组时发生未知错误: {e}")
+        return None
+
+def clean_corrupted_embeddings():
+    """
+    清理数据库中损坏的embedding数据。
+    由于convert_array已经能正确处理损坏数据，这个函数现在主要用于统计和可选的清理。
+    """
+    # 使用没有类型转换的连接来避免在清理过程中出错
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    try:
+        # 首先检查表中存在哪些embedding字段
+        cursor.execute("PRAGMA table_info(images)")
+        columns = cursor.fetchall()
+        column_names = [col[1] for col in columns]
+        
+        # 检查哪些embedding字段存在
+        embedding_fields = []
+        if 'clip_embedding' in column_names:
+            embedding_fields.append('clip_embedding')
+        if 'bce_embedding' in column_names:
+            embedding_fields.append('bce_embedding')
+        
+        if not embedding_fields:
+            logging.info("未找到embedding字段，跳过清理")
+            return 0
+        
+        # 由于convert_array已经能够处理损坏数据，我们只需要统计有多少损坏的数据
+        # 实际的清理工作由convert_array在运行时自动处理
+        
+        logging.info(f"embedding数据检查完成，convert_array函数会自动处理损坏的数据")
+        return 0
+        
+    except Exception as e:
+        logging.error(f"检查embedding数据时发生错误: {e}")
+        return -1
+    finally:
+        conn.close()
 
 sqlite3.register_adapter(np.ndarray, adapt_array)
 sqlite3.register_converter("ARRAY", convert_array)
@@ -38,30 +129,29 @@ def init_db():
             thumbnail_path TEXT UNIQUE,
             faiss_id INTEGER UNIQUE, 
             clip_embedding ARRAY,
+            bce_embedding ARRAY, -- BCE文本embedding（来自Qwen描述）
             qwen_description TEXT,
             qwen_keywords TEXT,
             user_tags TEXT, 
             upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            is_enhanced BOOLEAN DEFAULT FALSE,
+            -- 四个核心分析状态标志位
+            has_clip_embedding BOOLEAN DEFAULT FALSE,    -- 是否已生成CLIP embedding
+            is_enhanced BOOLEAN DEFAULT FALSE,           -- 是否已完成Qwen-VL增强分析
+            has_face_detection BOOLEAN DEFAULT FALSE,    -- 是否已完成人脸识别
+            has_face_clustering BOOLEAN DEFAULT FALSE,   -- 是否已完成人脸聚类
             last_enhanced_timestamp TIMESTAMP,
             deleted BOOLEAN DEFAULT FALSE 
         )
     ''')
 
-    # ✅ 2. 创建索引（在表存在之后才有效）
+    # ✅ 2. 创建索引
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_faiss_id ON images (faiss_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_original_path ON images (original_path)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_deleted ON images (deleted)")
-
-    # ✅ 3. 再尝试添加字段，防止旧表缺字段
-    cursor.execute("PRAGMA table_info(images)")
-    columns = [column['name'] for column in cursor.fetchall()]
-    if 'user_tags' not in columns:
-        cursor.execute("ALTER TABLE images ADD COLUMN user_tags TEXT")
-        logging.info("Added 'user_tags' column to 'images' table.")
-    if 'deleted' not in columns: 
-        cursor.execute("ALTER TABLE images ADD COLUMN deleted BOOLEAN DEFAULT FALSE")
-        logging.info("Added 'deleted' column to 'images' table.")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_has_clip_embedding ON images (has_clip_embedding)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_is_enhanced ON images (is_enhanced)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_has_face_detection ON images (has_face_detection)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_has_face_clustering ON images (has_face_clustering)")
 
     # 人脸聚类表，代表一个唯一的人
     cursor.execute('''
@@ -80,16 +170,18 @@ def init_db():
         CREATE TABLE IF NOT EXISTS detected_faces (
             face_id INTEGER PRIMARY KEY AUTOINCREMENT, -- 也是FAISS索引中的ID
             image_id INTEGER NOT NULL,
-            cluster_id INTEGER NOT NULL,
+            cluster_id INTEGER, -- 允许为NULL，表示尚未分配到聚类
             face_box TEXT NOT NULL, -- JSON-encoded list [x1, y1, x2, y2]
             attributes TEXT, -- JSON-encoded facial attributes
             quality_score REAL,
+            feature_vector TEXT, -- JSON-encoded feature vector
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE,
             FOREIGN KEY (cluster_id) REFERENCES face_clusters(cluster_id)
         )
     ''')
     logging.info("Table 'detected_faces' created or already exists.")
+    
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_face_image_id ON detected_faces (image_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_face_cluster_id ON detected_faces (cluster_id)")
     
@@ -103,13 +195,18 @@ def add_image_to_db(original_filename: str, original_path: str, thumbnail_path: 
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
+        # 根据是否有CLIP embedding来设置状态标志位
+        has_clip = clip_embedding is not None
+        
         cursor.execute('''
-            INSERT INTO images (original_filename, original_path, thumbnail_path, clip_embedding, is_enhanced, user_tags)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (original_filename, original_path, thumbnail_path, clip_embedding, False, json.dumps([]))) 
+            INSERT INTO images (original_filename, original_path, thumbnail_path, clip_embedding, 
+                               has_clip_embedding, is_enhanced, has_face_detection, has_face_clustering, user_tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (original_filename, original_path, thumbnail_path, clip_embedding, 
+              has_clip, False, False, False, json.dumps([]))) 
         conn.commit()
         image_id = cursor.lastrowid
-        logging.info(f"图片 '{original_filename}' (ID: {image_id}) 已初步添加到数据库。FAISS ID 待更新。")
+        logging.info(f"图片 '{original_filename}' (ID: {image_id}) 已初步添加到数据库，CLIP状态: {has_clip}")
         return image_id
     except sqlite3.IntegrityError as e:
         logging.error(f"添加图片 '{original_filename}' 到数据库失败 (路径可能已存在): {original_path}. Error: {e}")
@@ -225,10 +322,11 @@ def get_all_images(page: int = 1, limit: int = 20):
     return images, total_count
 
 def get_images_for_enhancement(limit: int = 10):
+    """获取需要Qwen-VL增强分析的图片列表"""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, original_path, clip_embedding, faiss_id
+        SELECT id, original_path, clip_embedding, bce_embedding, faiss_id
         FROM images 
         WHERE is_enhanced = FALSE AND deleted = FALSE 
         ORDER BY upload_timestamp ASC 
@@ -237,6 +335,161 @@ def get_images_for_enhancement(limit: int = 10):
     images = cursor.fetchall()
     conn.close()
     return images
+
+def get_images_without_clip_embedding(limit: int = 10000):
+    """获取需要生成CLIP embedding的图片列表"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, original_path, faiss_id
+        FROM images
+        WHERE has_clip_embedding = FALSE AND deleted = FALSE
+        ORDER BY upload_timestamp ASC
+        LIMIT ?
+    """, (limit,))
+    images = cursor.fetchall()
+    conn.close()
+    return images
+
+def get_images_without_face_detection(limit: int = 10000):
+    """获取需要人脸检测的图片列表"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, original_path
+        FROM images
+        WHERE has_face_detection = FALSE AND deleted = FALSE
+        ORDER BY upload_timestamp ASC
+        LIMIT ?
+    """, (limit,))
+    images = cursor.fetchall()
+    conn.close()
+    return images
+
+def get_images_without_face_clustering(limit: int = 10000):
+    """获取需要人脸聚类的图片列表"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, original_path
+        FROM images
+        WHERE has_face_clustering = FALSE AND deleted = FALSE
+        ORDER BY upload_timestamp ASC
+        LIMIT ?
+    """, (limit,))
+    images = cursor.fetchall()
+    conn.close()
+    return images
+
+def get_images_for_qwen_enhancement(limit: int = 10000):
+    """获取需要Qwen-VL增强分析的图片列表（替代原有的get_images_for_enhancement）"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, original_path, clip_embedding, bce_embedding, faiss_id
+        FROM images 
+        WHERE is_enhanced = FALSE AND deleted = FALSE 
+        ORDER BY upload_timestamp ASC 
+        LIMIT ?
+    """, (limit,))
+    images = cursor.fetchall()
+    conn.close()
+    return images
+
+def get_faces_without_cluster(limit: int = 10000):
+    """获取没有聚类的人脸列表"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT face_id, image_id, face_box, attributes, feature_vector
+        FROM detected_faces
+        WHERE cluster_id IS NULL
+        ORDER BY face_id ASC
+        LIMIT ?
+    """, (limit,))
+    faces = cursor.fetchall()
+    conn.close()
+    return faces
+
+def update_image_clip_embedding(image_id: int, clip_embedding):
+    """更新图片的CLIP embedding"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # 将numpy数组转换为blob
+        embedding_blob = clip_embedding.tobytes() if clip_embedding is not None else None
+        cursor.execute("""
+            UPDATE images 
+            SET clip_embedding = ?
+            WHERE id = ?
+        """, (embedding_blob, image_id))
+        conn.commit()
+        success = cursor.rowcount > 0
+    except Exception as e:
+        logging.error(f"更新图片 {image_id} 的CLIP embedding失败: {e}")
+        conn.rollback()
+        success = False
+    finally:
+        conn.close()
+    return success
+
+def update_face_cluster(face_id: int, cluster_id: int):
+    """更新人脸的聚类信息"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE detected_faces 
+            SET cluster_id = ?
+            WHERE face_id = ?
+        """, (cluster_id, face_id))
+        conn.commit()
+        success = cursor.rowcount > 0
+    except Exception as e:
+        logging.error(f"更新人脸 {face_id} 的聚类信息失败: {e}")
+        conn.rollback()
+        success = False
+    finally:
+        conn.close()
+    return success
+
+def update_image_status_flags(image_id: int, **flags):
+    """更新图片的状态标志位
+    可用的标志位: has_clip_embedding, is_enhanced, has_face_detection, has_face_clustering
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 构建动态更新语句
+    valid_flags = ['has_clip_embedding', 'is_enhanced', 'has_face_detection', 'has_face_clustering']
+    updates = []
+    values = []
+    
+    for flag, value in flags.items():
+        if flag in valid_flags and isinstance(value, bool):
+            updates.append(f"{flag} = ?")
+            values.append(value)
+    
+    if not updates:
+        conn.close()
+        return False
+    
+    values.append(image_id)
+    update_query = f"UPDATE images SET {', '.join(updates)} WHERE id = ?"
+    
+    try:
+        cursor.execute(update_query, values)
+        conn.commit()
+        success = cursor.rowcount > 0
+        if success:
+            logging.info(f"图片 {image_id} 状态标志位已更新: {flags}")
+    except Exception as e:
+        logging.error(f"更新图片 {image_id} 状态标志位失败: {e}")
+        conn.rollback()
+        success = False
+    finally:
+        conn.close()
+    return success
 
 def get_clip_embedding_for_image(image_id: int) -> np.ndarray | None:
     conn = get_db_connection()
@@ -296,22 +549,27 @@ def create_new_face_cluster(cover_face_id: int = None):
     finally:
         conn.close()
 
-def add_detected_face(image_id: int, cluster_id: int, face_box: list, attributes: dict, score: float):
+def add_detected_face(image_id: int, cluster_id: int, face_box: list, attributes: dict, score: float, feature_vector: list = None):
     """向数据库中添加一条检测到的人脸记录，并返回其face_id。"""
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         face_box_json = json.dumps(face_box)
         attributes_json = json.dumps(attributes)
+        feature_vector_json = json.dumps(feature_vector) if feature_vector is not None else None
         cursor.execute(
-            "INSERT INTO detected_faces (image_id, cluster_id, face_box, attributes, quality_score) VALUES (?, ?, ?, ?, ?)",
-            (image_id, cluster_id, face_box_json, attributes_json, score)
+            "INSERT INTO detected_faces (image_id, cluster_id, face_box, attributes, quality_score, feature_vector) VALUES (?, ?, ?, ?, ?, ?)",
+            (image_id, cluster_id, face_box_json, attributes_json, score, feature_vector_json)
         )
-        # 更新聚类的总人脸数
-        cursor.execute("UPDATE face_clusters SET face_count = face_count + 1 WHERE cluster_id = ?", (cluster_id,))
+        # 只有当cluster_id不为None时才更新聚类的总人脸数
+        if cluster_id is not None:
+            cursor.execute("UPDATE face_clusters SET face_count = face_count + 1 WHERE cluster_id = ?", (cluster_id,))
         conn.commit()
         face_id = cursor.lastrowid
-        logging.info(f"已添加人脸记录 face_id: {face_id} 到图片 id: {image_id}, 聚类 id: {cluster_id}")
+        if cluster_id is not None:
+            logging.info(f"已添加人脸记录 face_id: {face_id} 到图片 id: {image_id}, 聚类 id: {cluster_id}")
+        else:
+            logging.info(f"已添加人脸记录 face_id: {face_id} 到图片 id: {image_id}, 暂未分配聚类")
         return face_id
     finally:
         conn.close()

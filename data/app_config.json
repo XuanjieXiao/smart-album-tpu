@@ -1,10 +1,13 @@
 {
     "qwen_vl_analysis_enabled": false,
-    "use_enhanced_search": false,
+    "use_enhanced_search": true,
     "qwen_model_name": "Qwen2.5-VL-7B-Instruct",
     "qwen_api_key": "HoUbVVd_L1Z0uLJJiq5ND13yfDreU4pkTHwoTbU_EMp31G_OLx_ONh5fIoa37cNM4mRfAvst7bR_9VUfi4-QXg",
     "qwen_base_url": "https://www.sophnet.com/api/open-apis/v1",
-    "face_recognition_enabled": true,
+    "clip_embedding_enabled": false,
+    "face_recognition_upload_enabled": false,
+    "face_clustering_enabled": false,
     "face_api_url": "http://172.24.12.226:19091",
-    "face_cluster_threshold": 0.3
+    "face_cluster_threshold": 0.3,
+    "face_recognition_enabled": true
 }

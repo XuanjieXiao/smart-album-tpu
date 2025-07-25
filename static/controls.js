@@ -9,9 +9,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const qwenModelNameInput = document.getElementById('qwen-model-name-input');
     const qwenApiKeyInput = document.getElementById('qwen-api-key-input');
     const qwenBaseUrlInput = document.getElementById('qwen-base-url-input');
+    
+    // 新增上传控制元素
+    const clipEmbeddingToggleControls = document.getElementById('clip-embedding-toggle-controls');
+    const faceRecognitionUploadToggleControls = document.getElementById('face-recognition-upload-toggle-controls');
+    const faceClusteringToggleControls = document.getElementById('face-clustering-toggle-controls');
 
     // 新增人脸设置元素
-    const faceRecognitionToggleControls = document.getElementById('face-recognition-toggle-controls');
     const faceApiUrlInput = document.getElementById('face-api-url-input');
     const faceClusterThresholdInput = document.getElementById('face-cluster-threshold-input');
 
@@ -33,8 +37,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const batchEnhanceProgressBar = document.getElementById('batch-enhance-progress-bar');
     const batchEnhanceProgressText = document.getElementById('batch-enhance-progress-text');
     
+    // 批量CLIP分析元素
+    const batchClipButton = document.getElementById('batch-clip-button');
+    const batchClipStatus = document.getElementById('batch-clip-status');
+    const batchClipProgress = document.getElementById('batch-clip-progress');
+    const batchClipProgressBar = document.getElementById('batch-clip-progress-bar');
+    const batchClipProgressText = document.getElementById('batch-clip-progress-text');
+    
+    // 批量人脸检测元素
+    const batchFaceDetectionButton = document.getElementById('batch-face-detection-button');
+    const batchFaceDetectionStatus = document.getElementById('batch-face-detection-status');
+    const batchFaceDetectionProgress = document.getElementById('batch-face-detection-progress');
+    const batchFaceDetectionProgressBar = document.getElementById('batch-face-detection-progress-bar');
+    const batchFaceDetectionProgressText = document.getElementById('batch-face-detection-progress-text');
+    
+    // 批量人脸聚类元素
+    const batchFaceClusteringButton = document.getElementById('batch-face-clustering-button');
+    const batchFaceClusteringStatus = document.getElementById('batch-face-clustering-status');
+    const batchFaceClusteringProgress = document.getElementById('batch-face-clustering-progress');
+    const batchFaceClusteringProgressBar = document.getElementById('batch-face-clustering-progress-bar');
+    const batchFaceClusteringProgressText = document.getElementById('batch-face-clustering-progress-text');
+    
     let currentUploadAbortController = null; // 用于中止上传
     let batchEnhancePollingInterval = null; // 用于轮询批量增强状态
+    let batchClipPollingInterval = null; // 用于轮询批量CLIP状态
+    let batchFaceDetectionPollingInterval = null; // 用于轮询批量人脸检测状态
+    let batchFaceClusteringPollingInterval = null; // 用于轮询批量人脸聚类状态
 
     // --- 功能函数 ---
 
@@ -60,8 +88,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (qwenApiKeyInput) qwenApiKeyInput.value = data.qwen_api_key || '';
                 if (qwenBaseUrlInput) qwenBaseUrlInput.value = data.qwen_base_url || '';
                 
-                // 填充新增的人脸设置
-                if (faceRecognitionToggleControls) faceRecognitionToggleControls.checked = data.face_recognition_enabled === true;
+                // 填充新增的上传控制设置
+                if (clipEmbeddingToggleControls) clipEmbeddingToggleControls.checked = data.clip_embedding_enabled === true;
+                if (faceRecognitionUploadToggleControls) faceRecognitionUploadToggleControls.checked = data.face_recognition_upload_enabled === true;
+                if (faceClusteringToggleControls) faceClusteringToggleControls.checked = data.face_clustering_enabled === true;
+                
+                // 填充人脸设置
                 if (faceApiUrlInput) faceApiUrlInput.value = data.face_api_url || '';
                 if (faceClusterThresholdInput) faceClusterThresholdInput.value = data.face_cluster_threshold ?? 0.5;
             })
@@ -84,8 +116,12 @@ document.addEventListener('DOMContentLoaded', () => {
             qwen_api_key: qwenApiKeyInput?.value.trim(),
             qwen_base_url: qwenBaseUrlInput?.value.trim(),
             
-            // 新增人脸设置
-            face_recognition_enabled: faceRecognitionToggleControls?.checked,
+            // 新增上传控制设置
+            clip_embedding_enabled: clipEmbeddingToggleControls?.checked,
+            face_recognition_upload_enabled: faceRecognitionUploadToggleControls?.checked,
+            face_clustering_enabled: faceClusteringToggleControls?.checked,
+            
+            // 人脸设置
             face_api_url: faceApiUrlInput?.value.trim(),
             face_cluster_threshold: faceClusterThresholdInput ? parseFloat(faceClusterThresholdInput.value) : undefined,
         };
@@ -189,6 +225,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * 获取批量CLIP分析状态
+     */
+    function getBatchClipStatus() {
+        return fetch('/batch_clip/status')
+            .then(response => response.json())
+            .catch(error => {
+                console.error('获取批量CLIP状态失败:', error);
+                return { is_running: false, error: error.message };
+            });
+    }
+
+    /**
+     * 获取批量人脸检测状态
+     */
+    function getBatchFaceDetectionStatus() {
+        return fetch('/batch_face_detection/status')
+            .then(response => response.json())
+            .catch(error => {
+                console.error('获取批量人脸检测状态失败:', error);
+                return { is_running: false, error: error.message };
+            });
+    }
+
+    /**
+     * 获取批量人脸聚类状态
+     */
+    function getBatchFaceClusteringStatus() {
+        return fetch('/batch_face_clustering/status')
+            .then(response => response.json())
+            .catch(error => {
+                console.error('获取批量人脸聚类状态失败:', error);
+                return { is_running: false, error: error.message };
+            });
+    }
+
+    /**
      * 更新批量增强分析UI状态
      */
     function updateBatchEnhanceUI(status) {
@@ -247,6 +319,182 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * 更新批量CLIP分析UI状态
+     */
+    function updateBatchClipUI(status) {
+        if (!status) return;
+
+        if (status.is_running) {
+            // 分析中状态
+            batchClipButton.textContent = '终止CLIP分析';
+            batchClipButton.className = 'action-button batch-clip-running';
+            batchClipButton.innerHTML = '<i class="fas fa-stop"></i> 终止CLIP分析';
+            
+            // 显示进度
+            if (batchClipProgress) {
+                batchClipProgress.style.display = 'block';
+                const percentage = status.total_images > 0 ? 
+                    (status.processed_count / status.total_images * 100) : 0;
+                batchClipProgressBar.style.width = `${percentage}%`;
+                batchClipProgressText.textContent = 
+                    `${status.processed_count} / ${status.total_images}`;
+            }
+            
+            // 显示状态信息
+            let statusText = '正在进行CLIP分析...';
+            if (status.current_image_filename) {
+                statusText += ` 当前: ${status.current_image_filename}`;
+            }
+            if (status.last_error) {
+                statusText += ` (上次错误: ${status.last_error})`;
+            }
+            batchClipStatus.textContent = statusText;
+            
+        } else {
+            // 空闲状态
+            batchClipButton.textContent = '一键CLIP分析';
+            batchClipButton.className = 'action-button success-action';
+            batchClipButton.innerHTML = '<i class="fas fa-brain"></i> 一键CLIP分析';
+            
+            // 隐藏进度条
+            if (batchClipProgress) {
+                batchClipProgress.style.display = 'none';
+            }
+            
+            // 显示完成状态
+            if (status.processed_count > 0) {
+                let statusText = `已完成 ${status.processed_count} 张图片的CLIP分析`;
+                if (status.errors && status.errors.length > 0) {
+                    statusText += `, 失败 ${status.errors.length} 张`;
+                }
+                batchClipStatus.textContent = statusText;
+                setTimeout(() => { batchClipStatus.textContent = ''; }, 5000);
+            } else if (status.error) {
+                batchClipStatus.textContent = `错误: ${status.error}`;
+                setTimeout(() => { batchClipStatus.textContent = ''; }, 5000);
+            }
+        }
+    }
+
+    /**
+     * 更新批量人脸检测UI状态
+     */
+    function updateBatchFaceDetectionUI(status) {
+        if (!status) return;
+
+        if (status.is_running) {
+            // 分析中状态
+            batchFaceDetectionButton.textContent = '终止人脸检测';
+            batchFaceDetectionButton.className = 'action-button batch-face-detection-running';
+            batchFaceDetectionButton.innerHTML = '<i class="fas fa-stop"></i> 终止人脸检测';
+            
+            // 显示进度
+            if (batchFaceDetectionProgress) {
+                batchFaceDetectionProgress.style.display = 'block';
+                const percentage = status.total_images > 0 ? 
+                    (status.processed_count / status.total_images * 100) : 0;
+                batchFaceDetectionProgressBar.style.width = `${percentage}%`;
+                batchFaceDetectionProgressText.textContent = 
+                    `${status.processed_count} / ${status.total_images}`;
+            }
+            
+            // 显示状态信息
+            let statusText = '正在进行人脸检测...';
+            if (status.current_image_filename) {
+                statusText += ` 当前: ${status.current_image_filename}`;
+            }
+            if (status.last_error) {
+                statusText += ` (上次错误: ${status.last_error})`;
+            }
+            batchFaceDetectionStatus.textContent = statusText;
+            
+        } else {
+            // 空闲状态
+            batchFaceDetectionButton.textContent = '一键人脸识别';
+            batchFaceDetectionButton.className = 'action-button';
+            batchFaceDetectionButton.style.backgroundColor = '#fd7e14';
+            batchFaceDetectionButton.innerHTML = '<i class="fas fa-user-friends"></i> 一键人脸识别';
+            
+            // 隐藏进度条
+            if (batchFaceDetectionProgress) {
+                batchFaceDetectionProgress.style.display = 'none';
+            }
+            
+            // 显示完成状态
+            if (status.processed_count > 0) {
+                let statusText = `已完成 ${status.processed_count} 张图片的人脸检测`;
+                if (status.errors && status.errors.length > 0) {
+                    statusText += `, 失败 ${status.errors.length} 张`;
+                }
+                batchFaceDetectionStatus.textContent = statusText;
+                setTimeout(() => { batchFaceDetectionStatus.textContent = ''; }, 5000);
+            } else if (status.error) {
+                batchFaceDetectionStatus.textContent = `错误: ${status.error}`;
+                setTimeout(() => { batchFaceDetectionStatus.textContent = ''; }, 5000);
+            }
+        }
+    }
+
+    /**
+     * 更新批量人脸聚类UI状态
+     */
+    function updateBatchFaceClusteringUI(status) {
+        if (!status) return;
+
+        if (status.is_running) {
+            // 分析中状态
+            batchFaceClusteringButton.textContent = '终止人脸聚类';
+            batchFaceClusteringButton.className = 'action-button batch-face-clustering-running';
+            batchFaceClusteringButton.innerHTML = '<i class="fas fa-stop"></i> 终止人脸聚类';
+            
+            // 显示进度
+            if (batchFaceClusteringProgress) {
+                batchFaceClusteringProgress.style.display = 'block';
+                const percentage = status.total_faces > 0 ? 
+                    (status.processed_count / status.total_faces * 100) : 0;
+                batchFaceClusteringProgressBar.style.width = `${percentage}%`;
+                batchFaceClusteringProgressText.textContent = 
+                    `${status.processed_count} / ${status.total_faces}`;
+            }
+            
+            // 显示状态信息
+            let statusText = '正在进行人脸聚类...';
+            if (status.current_face_id) {
+                statusText += ` 当前人脸ID: ${status.current_face_id}`;
+            }
+            if (status.last_error) {
+                statusText += ` (上次错误: ${status.last_error})`;
+            }
+            batchFaceClusteringStatus.textContent = statusText;
+            
+        } else {
+            // 空闲状态
+            batchFaceClusteringButton.textContent = '一键人脸聚类';
+            batchFaceClusteringButton.className = 'action-button';
+            batchFaceClusteringButton.style.backgroundColor = '#6f42c1';
+            batchFaceClusteringButton.innerHTML = '<i class="fas fa-users"></i> 一键人脸聚类';
+            
+            // 隐藏进度条
+            if (batchFaceClusteringProgress) {
+                batchFaceClusteringProgress.style.display = 'none';
+            }
+            
+            // 显示完成状态
+            if (status.processed_count > 0) {
+                let statusText = `已完成 ${status.processed_count} 张人脸的聚类分析`;
+                if (status.errors && status.errors.length > 0) {
+                    statusText += `, 失败 ${status.errors.length} 张`;
+                }
+                batchFaceClusteringStatus.textContent = statusText;
+                setTimeout(() => { batchFaceClusteringStatus.textContent = ''; }, 5000);
+            } else if (status.error) {
+                batchFaceClusteringStatus.textContent = `错误: ${status.error}`;
+                setTimeout(() => { batchFaceClusteringStatus.textContent = ''; }, 5000);
+            }
+        }
+    }
+
+    /**
      * 开始轮询批量增强分析状态
      */
     function startBatchEnhanceStatusPolling() {
@@ -271,6 +519,90 @@ document.addEventListener('DOMContentLoaded', () => {
         if (batchEnhancePollingInterval) {
             clearInterval(batchEnhancePollingInterval);
             batchEnhancePollingInterval = null;
+        }
+    }
+
+    /**
+     * 开始轮询批量CLIP分析状态
+     */
+    function startBatchClipStatusPolling() {
+        if (batchClipPollingInterval) return;
+        
+        batchClipPollingInterval = setInterval(() => {
+            getBatchClipStatus().then(status => {
+                updateBatchClipUI(status);
+                
+                // 如果不在运行中，停止轮询
+                if (!status.is_running) {
+                    stopBatchClipStatusPolling();
+                }
+            });
+        }, 2000); // 每2秒轮询一次
+    }
+
+    /**
+     * 停止轮询批量CLIP分析状态
+     */
+    function stopBatchClipStatusPolling() {
+        if (batchClipPollingInterval) {
+            clearInterval(batchClipPollingInterval);
+            batchClipPollingInterval = null;
+        }
+    }
+
+    /**
+     * 开始轮询批量人脸检测状态
+     */
+    function startBatchFaceDetectionStatusPolling() {
+        if (batchFaceDetectionPollingInterval) return;
+        
+        batchFaceDetectionPollingInterval = setInterval(() => {
+            getBatchFaceDetectionStatus().then(status => {
+                updateBatchFaceDetectionUI(status);
+                
+                // 如果不在运行中，停止轮询
+                if (!status.is_running) {
+                    stopBatchFaceDetectionStatusPolling();
+                }
+            });
+        }, 2000); // 每2秒轮询一次
+    }
+
+    /**
+     * 停止轮询批量人脸检测状态
+     */
+    function stopBatchFaceDetectionStatusPolling() {
+        if (batchFaceDetectionPollingInterval) {
+            clearInterval(batchFaceDetectionPollingInterval);
+            batchFaceDetectionPollingInterval = null;
+        }
+    }
+
+    /**
+     * 开始轮询批量人脸聚类状态
+     */
+    function startBatchFaceClusteringStatusPolling() {
+        if (batchFaceClusteringPollingInterval) return;
+        
+        batchFaceClusteringPollingInterval = setInterval(() => {
+            getBatchFaceClusteringStatus().then(status => {
+                updateBatchFaceClusteringUI(status);
+                
+                // 如果不在运行中，停止轮询
+                if (!status.is_running) {
+                    stopBatchFaceClusteringStatusPolling();
+                }
+            });
+        }, 2000); // 每2秒轮询一次
+    }
+
+    /**
+     * 停止轮询批量人脸聚类状态
+     */
+    function stopBatchFaceClusteringStatusPolling() {
+        if (batchFaceClusteringPollingInterval) {
+            clearInterval(batchFaceClusteringPollingInterval);
+            batchFaceClusteringPollingInterval = null;
         }
     }
 
@@ -326,6 +658,159 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * 处理批量CLIP分析按钮点击
+     */
+    function handleBatchClipClick() {
+        getBatchClipStatus().then(status => {
+            if (status.is_running) {
+                // 当前在运行中，询问是否终止
+                if (confirm('确定要终止当前的批量CLIP分析吗？')) {
+                    fetch('/batch_clip/stop', { method: 'POST' })
+                        .then(response => response.json())
+                        .then(data => {
+                            batchClipStatus.textContent = data.message || 'CLIP分析已终止';
+                            stopBatchClipStatusPolling();
+                            // 更新UI状态
+                            setTimeout(() => {
+                                getBatchClipStatus().then(updateBatchClipUI);
+                            }, 1000);
+                        })
+                        .catch(error => {
+                            console.error('终止批量CLIP分析失败:', error);
+                            batchClipStatus.textContent = '终止CLIP分析失败';
+                        });
+                }
+            } else {
+                // 当前空闲，询问是否开始
+                if (confirm('将对图库中所有未计算CLIP embedding的照片进行分析，耗费时间较长，是否继续？')) {
+                    batchClipStatus.textContent = '正在启动批量CLIP分析...';
+                    
+                    fetch('/batch_clip/start', { method: 'POST' })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                batchClipStatus.textContent = data.message || '批量CLIP分析已启动';
+                                startBatchClipStatusPolling();
+                                // 立即更新一次状态
+                                setTimeout(() => {
+                                    getBatchClipStatus().then(updateBatchClipUI);
+                                }, 500);
+                            } else {
+                                batchClipStatus.textContent = data.error || '启动失败';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('启动批量CLIP分析失败:', error);
+                            batchClipStatus.textContent = '启动CLIP分析失败';
+                        });
+                }
+            }
+        });
+    }
+
+    /**
+     * 处理批量人脸检测按钮点击
+     */
+    function handleBatchFaceDetectionClick() {
+        getBatchFaceDetectionStatus().then(status => {
+            if (status.is_running) {
+                // 当前在运行中，询问是否终止
+                if (confirm('确定要终止当前的批量人脸检测吗？')) {
+                    fetch('/batch_face_detection/stop', { method: 'POST' })
+                        .then(response => response.json())
+                        .then(data => {
+                            batchFaceDetectionStatus.textContent = data.message || '人脸检测已终止';
+                            stopBatchFaceDetectionStatusPolling();
+                            // 更新UI状态
+                            setTimeout(() => {
+                                getBatchFaceDetectionStatus().then(updateBatchFaceDetectionUI);
+                            }, 1000);
+                        })
+                        .catch(error => {
+                            console.error('终止批量人脸检测失败:', error);
+                            batchFaceDetectionStatus.textContent = '终止人脸检测失败';
+                        });
+                }
+            } else {
+                // 当前空闲，询问是否开始
+                if (confirm('将对图库中所有未进行人脸检测的照片进行分析，耗费时间较长，是否继续？')) {
+                    batchFaceDetectionStatus.textContent = '正在启动批量人脸检测...';
+                    
+                    fetch('/batch_face_detection/start', { method: 'POST' })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                batchFaceDetectionStatus.textContent = data.message || '批量人脸检测已启动';
+                                startBatchFaceDetectionStatusPolling();
+                                // 立即更新一次状态
+                                setTimeout(() => {
+                                    getBatchFaceDetectionStatus().then(updateBatchFaceDetectionUI);
+                                }, 500);
+                            } else {
+                                batchFaceDetectionStatus.textContent = data.error || '启动失败';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('启动批量人脸检测失败:', error);
+                            batchFaceDetectionStatus.textContent = '启动人脸检测失败';
+                        });
+                }
+            }
+        });
+    }
+
+    /**
+     * 处理批量人脸聚类按钮点击
+     */
+    function handleBatchFaceClusteringClick() {
+        getBatchFaceClusteringStatus().then(status => {
+            if (status.is_running) {
+                // 当前在运行中，询问是否终止
+                if (confirm('确定要终止当前的批量人脸聚类吗？')) {
+                    fetch('/batch_face_clustering/stop', { method: 'POST' })
+                        .then(response => response.json())
+                        .then(data => {
+                            batchFaceClusteringStatus.textContent = data.message || '人脸聚类已终止';
+                            stopBatchFaceClusteringStatusPolling();
+                            // 更新UI状态
+                            setTimeout(() => {
+                                getBatchFaceClusteringStatus().then(updateBatchFaceClusteringUI);
+                            }, 1000);
+                        })
+                        .catch(error => {
+                            console.error('终止批量人脸聚类失败:', error);
+                            batchFaceClusteringStatus.textContent = '终止人脸聚类失败';
+                        });
+                }
+            } else {
+                // 当前空闲，询问是否开始
+                if (confirm('将对图库中所有未聚类的人脸进行聚类分析，耗费时间较长，是否继续？')) {
+                    batchFaceClusteringStatus.textContent = '正在启动批量人脸聚类...';
+                    
+                    fetch('/batch_face_clustering/start', { method: 'POST' })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                batchFaceClusteringStatus.textContent = data.message || '批量人脸聚类已启动';
+                                startBatchFaceClusteringStatusPolling();
+                                // 立即更新一次状态
+                                setTimeout(() => {
+                                    getBatchFaceClusteringStatus().then(updateBatchFaceClusteringUI);
+                                }, 500);
+                            } else {
+                                batchFaceClusteringStatus.textContent = data.error || '启动失败';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('启动批量人脸聚类失败:', error);
+                            batchFaceClusteringStatus.textContent = '启动人脸聚类失败';
+                        });
+                }
+            }
+        });
+    }
+
+    /**
      * 初始化所有事件监听器
      */
     function initializeEventListeners() {
@@ -366,6 +851,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (batchEnhanceButton) {
             batchEnhanceButton.addEventListener('click', handleBatchEnhanceClick);
         }
+        
+        // 批量CLIP分析按钮
+        if (batchClipButton) {
+            batchClipButton.addEventListener('click', handleBatchClipClick);
+        }
+        
+        // 批量人脸检测按钮
+        if (batchFaceDetectionButton) {
+            batchFaceDetectionButton.addEventListener('click', handleBatchFaceDetectionClick);
+        }
+        
+        // 批量人脸聚类按钮
+        if (batchFaceClusteringButton) {
+            batchFaceClusteringButton.addEventListener('click', handleBatchFaceClusteringClick);
+        }
     }
 
     // --- 页面启动时执行 ---
@@ -378,6 +878,33 @@ document.addEventListener('DOMContentLoaded', () => {
         // 如果正在运行，开始轮询
         if (status.is_running) {
             startBatchEnhanceStatusPolling();
+        }
+    });
+    
+    // 检查批量CLIP分析状态
+    getBatchClipStatus().then(status => {
+        updateBatchClipUI(status);
+        // 如果正在运行，开始轮询
+        if (status.is_running) {
+            startBatchClipStatusPolling();
+        }
+    });
+    
+    // 检查批量人脸检测状态
+    getBatchFaceDetectionStatus().then(status => {
+        updateBatchFaceDetectionUI(status);
+        // 如果正在运行，开始轮询
+        if (status.is_running) {
+            startBatchFaceDetectionStatusPolling();
+        }
+    });
+    
+    // 检查批量人脸聚类状态
+    getBatchFaceClusteringStatus().then(status => {
+        updateBatchFaceClusteringUI(status);
+        // 如果正在运行，开始轮询
+        if (status.is_running) {
+            startBatchFaceClusteringStatusPolling();
         }
     });
 });

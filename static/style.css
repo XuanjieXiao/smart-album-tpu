@@ -1257,6 +1257,54 @@ body {
   background-color: var(--danger-hover) !important;
 }
 
+/* 批量分析组件样式 */
+.batch-analysis-group {
+  margin-bottom: 25px;
+  padding: 20px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--border-radius);
+  background-color: var(--light-gray);
+}
+
+.batch-analysis-group h3 {
+  margin: 0 0 15px 0;
+  color: var(--gray-700);
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.batch-analysis-group:last-child {
+  margin-bottom: 0;
+}
+
+/* 批量分析按钮运行状态样式 */
+.batch-clip-running {
+  background-color: var(--danger-color) !important;
+  color: var(--white) !important;
+}
+
+.batch-clip-running:hover {
+  background-color: var(--danger-hover) !important;
+}
+
+.batch-face-detection-running {
+  background-color: var(--danger-color) !important;
+  color: var(--white) !important;
+}
+
+.batch-face-detection-running:hover {
+  background-color: var(--danger-hover) !important;
+}
+
+.batch-face-clustering-running {
+  background-color: var(--danger-color) !important;
+  color: var(--white) !important;
+}
+
+.batch-face-clustering-running:hover {
+  background-color: var(--danger-hover) !important;
+}
+
 /* ========================================================================
    12. 表单按钮样式
    ======================================================================== */

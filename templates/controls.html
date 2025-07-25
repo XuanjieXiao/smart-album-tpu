@@ -28,6 +28,18 @@
                 <label for="use-enhanced-search-toggle-controls">使用增强搜索 (利用Qwen描述):</label>
                 <input type="checkbox" id="use-enhanced-search-toggle-controls">
             </div>
+            <div class="control-group checkbox-group">
+                <label for="clip-embedding-toggle-controls">CLIP embedding计算 (上传时自动):</label>
+                <input type="checkbox" id="clip-embedding-toggle-controls">
+            </div>
+            <div class="control-group checkbox-group">
+                <label for="face-recognition-upload-toggle-controls">人脸识别 (上传时自动):</label>
+                <input type="checkbox" id="face-recognition-upload-toggle-controls">
+            </div>
+            <div class="control-group checkbox-group">
+                <label for="face-clustering-toggle-controls">人脸识别聚类 (上传时自动):</label>
+                <input type="checkbox" id="face-clustering-toggle-controls">
+            </div>
         </section>
         
         <section class="control-options-section">
@@ -55,10 +67,6 @@
         <section class="control-options-section">
             <h2>人脸识别设置</h2>
             <p class="control-note" style="margin-bottom: 15px; font-size: 0.9em; color: #555;">配置用于人脸检测、聚类和搜索的相关参数。</p>
-            <div class="control-group checkbox-group">
-                <label for="face-recognition-toggle-controls">人脸识别功能 (上传时自动):</label>
-                <input type="checkbox" id="face-recognition-toggle-controls">
-            </div>
             <div class="control-group">
                 <label for="face-api-url-input">人脸服务 URL:</label>
                 <input type="text" id="face-api-url-input" class="settings-input" placeholder="例如: http://127.0.0.1:8000">
@@ -71,17 +79,73 @@
 
         <section class="control-options-section">
             <h2>批量增强分析</h2>
-            <p class="control-note" style="margin-bottom: 15px; font-size: 0.9em; color: #555;">对图库中所有未增强分析的照片进行Qwen-VL批量增强分析。</p>
-            <div class="control-group">
-                <button id="batch-enhance-button" class="action-button primary-action">
-                    <i class="fas fa-magic"></i> 一键增强分析
-                </button>
-                <div id="batch-enhance-status" class="status-message" style="margin-top: 10px;"></div>
-                <div id="batch-enhance-progress" class="progress-container" style="display: none; margin-top: 10px;">
-                    <div class="progress-bar">
-                        <div id="batch-enhance-progress-bar" class="progress-fill"></div>
+            <p class="control-note" style="margin-bottom: 15px; font-size: 0.9em; color: #555;">对图库中的照片进行各种批量分析处理。</p>
+            
+            <!-- Qwen-VL 批量增强分析 -->
+            <div class="batch-analysis-group">
+                <h3>Qwen-VL 图片分析</h3>
+                <div class="control-group">
+                    <button id="batch-enhance-button" class="action-button primary-action">
+                        <i class="fas fa-magic"></i> 一键增强分析
+                    </button>
+                    <div id="batch-enhance-status" class="status-message" style="margin-top: 10px;"></div>
+                    <div id="batch-enhance-progress" class="progress-container" style="display: none; margin-top: 10px;">
+                        <div class="progress-bar">
+                            <div id="batch-enhance-progress-bar" class="progress-fill"></div>
+                        </div>
+                        <div id="batch-enhance-progress-text" class="progress-text">0 / 0</div>
                     </div>
-                    <div id="batch-enhance-progress-text" class="progress-text">0 / 0</div>
+                </div>
+            </div>
+
+            <!-- CLIP Embedding 批量计算 -->
+            <div class="batch-analysis-group">
+                <h3>CLIP Embedding 计算</h3>
+                <div class="control-group">
+                    <button id="batch-clip-button" class="action-button success-action">
+                        <i class="fas fa-brain"></i> 一键CLIP分析
+                    </button>
+                    <div id="batch-clip-status" class="status-message" style="margin-top: 10px;"></div>
+                    <div id="batch-clip-progress" class="progress-container" style="display: none; margin-top: 10px;">
+                        <div class="progress-bar">
+                            <div id="batch-clip-progress-bar" class="progress-fill"></div>
+                        </div>
+                        <div id="batch-clip-progress-text" class="progress-text">0 / 0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 人脸识别批量分析 -->
+            <div class="batch-analysis-group">
+                <h3>人脸识别分析</h3>
+                <div class="control-group">
+                    <button id="batch-face-detection-button" class="action-button" style="background-color: #fd7e14;">
+                        <i class="fas fa-user-friends"></i> 一键人脸识别
+                    </button>
+                    <div id="batch-face-detection-status" class="status-message" style="margin-top: 10px;"></div>
+                    <div id="batch-face-detection-progress" class="progress-container" style="display: none; margin-top: 10px;">
+                        <div class="progress-bar">
+                            <div id="batch-face-detection-progress-bar" class="progress-fill"></div>
+                        </div>
+                        <div id="batch-face-detection-progress-text" class="progress-text">0 / 0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 人脸聚类分析 -->
+            <div class="batch-analysis-group">
+                <h3>人脸聚类分析</h3>
+                <div class="control-group">
+                    <button id="batch-face-clustering-button" class="action-button" style="background-color: #6f42c1;">
+                        <i class="fas fa-users"></i> 一键人脸聚类
+                    </button>
+                    <div id="batch-face-clustering-status" class="status-message" style="margin-top: 10px;"></div>
+                    <div id="batch-face-clustering-progress" class="progress-container" style="display: none; margin-top: 10px;">
+                        <div class="progress-bar">
+                            <div id="batch-face-clustering-progress-bar" class="progress-fill"></div>
+                        </div>
+                        <div id="batch-face-clustering-progress-text" class="progress-text">0 / 0</div>
+                    </div>
                 </div>
             </div>
         </section>
